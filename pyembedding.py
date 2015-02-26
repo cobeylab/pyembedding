@@ -132,8 +132,14 @@ def simplex_predict(X_train, Y_train, X_test, Y_test, n_neighbors=None, distance
 		neighbor_ind = np.argpartition(distances[:,i], range(n_neighbors))[:n_neighbors]
 		neighbor_dist = distances[neighbor_ind,i]
 		
-		weights = np.exp(-neighbor_dist / neighbor_dist[0])
-		weights = weights / np.sum(weights)
+		assert neighbor_dist[0] != 0.0
+		assert not np.isnan(neighbor_dist[0])
+		
+		if np.isinf(neighbor_dist[0]):
+			weights = np.ones(n_neighbors, dtype=float) / float(n_neighbors)
+		else:
+			weights = np.exp(-neighbor_dist / neighbor_dist[0])
+			weights = weights / np.sum(weights)
 # 		print weights
 # 		print Y_train[neighbor_ind]
 		Y_pred[i] = np.dot(weights, Y_train[neighbor_ind])
@@ -146,15 +152,26 @@ def simplex_predict(X_train, Y_train, X_test, Y_test, n_neighbors=None, distance
 	
 	return Y_pred
 
-def ccm(X_train, y_train, X_test, y_test, Ls, n_neighbors=None, n_replicates=100, replace=False, distances=None, L_callback=None, rep_callback=None):
+def ccm(X_train, y_train, X_test, y_test, Ls=None, n_neighbors=None, n_replicates=100, replace=False, distances=None, L_callback=None, rep_callback=None):
+	
+	if Ls is None:
+		if n_neighbors is None:
+			Ls = [X_train.shape[1] + 2, X_train.shape[0]]
+		else:
+			Ls = [n_neighbors + 1, X_train.shape[0]]
+	
 	if distances is None:
 		distances = compute_distances(X_train, X_test)
 	
-	corrs = np.zeros((len(Ls), n_replicates))
+	corrs_list = list()
 	for index_L, L in enumerate(Ls):
+		n_reps_L = 1 if (X_train.shape[0] == L and not replace) else n_replicates
+		corrs = np.zeros(n_reps_L)
+		
 		if L_callback:
 			L_callback(L)
-		for rep in range(n_replicates):
+		
+		for rep in range(n_reps_L):
 			indexes = np.random.choice(X_train.shape[0], size=L, replace=replace)
 			X_train_rep = X_train[indexes,:]
 			y_train_rep = y_train[indexes]
@@ -165,11 +182,15 @@ def ccm(X_train, y_train, X_test, y_test, Ls, n_neighbors=None, n_replicates=100
 				distances=distances[indexes,:]
 			)
 			corr = np.corrcoef(y_test, y_pred)[0,1]
+			if np.isnan(corr):
+				corr = 1.0
 			
 			if rep_callback:
 				rep_callback(L, rep, indexes, X_train_rep, y_train_rep, y_pred, corr)
-			corrs[index_L, rep] = corr
-	return corrs
+			corrs[rep] = corr
+			
+			corrs_list.append(corrs)
+	return corrs_list
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(__file__))
