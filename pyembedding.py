@@ -2,10 +2,21 @@
 
 import os
 import sys
+import random
 import numpy as np
 import scipy.spatial.distance
 import csv
 import sqlite3
+import multiprocessing
+import ctypes
+
+def make_shared_array(A):
+	shared_array_base = multiprocessing.Array(ctypes.c_double, A.size)
+	shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
+	shared_array = shared_array.reshape(A.shape)
+	shared_array[:] = A
+	
+	return shared_array
 
 def read_table(db, table_name, col_names=None, filter=None):
 	rows = list()
@@ -152,7 +163,12 @@ def simplex_predict(X_train, Y_train, X_test, Y_test, n_neighbors=None, distance
 	
 	return Y_pred
 
-def ccm(X_train, y_train, X_test, y_test, Ls=None, n_neighbors=None, n_replicates=100, replace=False, distances=None, L_callback=None, rep_callback=None):
+def ccm(X_train, y_train, X_test, y_test,
+	Ls=None, n_neighbors=None, n_replicates=100, replace=False, distances=None,
+	L_callback=None, rep_callback=None, pool=None, rng=None
+):
+	if rng is None:
+		rng = random.SystemRandom()
 	
 	if Ls is None:
 		if n_neighbors is None:
@@ -163,34 +179,61 @@ def ccm(X_train, y_train, X_test, y_test, Ls=None, n_neighbors=None, n_replicate
 	if distances is None:
 		distances = compute_distances(X_train, X_test)
 	
-	corrs_list = list()
+	if pool:
+		X_train = make_shared_array(X_train)
+		y_train = make_shared_array(y_train)
+		X_test = make_shared_array(X_test)
+		y_test = make_shared_array(y_test)
+		distances = make_shared_array(distances)
+	
+	results_list = list()
 	for index_L, L in enumerate(Ls):
+		if L_callback:
+			L_callback(L, None)
+		
 		n_reps_L = 1 if (X_train.shape[0] == L and not replace) else n_replicates
-		corrs = np.zeros(n_reps_L)
+		
+		arg_list = list()
+		for rep_id in xrange(n_replicates):
+			seed = rng.randint(1, 2**32 - 1)
+			arg_list.append((
+				X_train, y_train, X_test, y_test, L, n_neighbors, replace, distances, rep_id, seed,
+				None if pool else rep_callback
+			))
+		
+		if pool:
+			corrs = pool.map(ccm_single_mappable, arg_list)
+		else:
+			corrs = map(ccm_single_mappable, arg_list)
 		
 		if L_callback:
-			L_callback(L)
+			L_callback(L, corrs)
 		
-		for rep in range(n_reps_L):
-			indexes = np.random.choice(X_train.shape[0], size=L, replace=replace)
-			X_train_rep = X_train[indexes,:]
-			y_train_rep = y_train[indexes]
-			y_pred = simplex_predict(
-				X_train_rep, y_train_rep,
-				X_test, y_test,
-				n_neighbors=n_neighbors,
-				distances=distances[indexes,:]
-			)
-			corr = np.corrcoef(y_test, y_pred)[0,1]
-			if np.isnan(corr):
-				corr = 1.0
-			
-			if rep_callback:
-				rep_callback(L, rep, indexes, X_train_rep, y_train_rep, y_pred, corr)
-			corrs[rep] = corr
-			
-			corrs_list.append(corrs)
-	return corrs_list
+		results_list.append([L, corrs])
+	return results_list
+
+def ccm_single_mappable(arg):
+	return ccm_single(*arg)
+
+def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distances, rep_id, seed, rep_callback):
+	rng = np.random.RandomState(seed)
+	indexes = rng.choice(X_train.shape[0], size=L, replace=replace)
+	X_train_rep = X_train[indexes,:]
+	y_train_rep = y_train[indexes]
+	y_pred = simplex_predict(
+		X_train_rep, y_train_rep,
+		X_test, y_test,
+		n_neighbors=n_neighbors,
+		distances=distances[indexes,:]
+	)
+	corr = np.corrcoef(y_test, y_pred)[0,1]
+	if np.isnan(corr):
+		corr = 1.0
+	
+	if rep_callback:
+		rep_callback(L, corr, indexes, X_train_rep, y_train_rep, y_pred)
+	
+	return corr
 
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(__file__))
