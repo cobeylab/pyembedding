@@ -74,6 +74,12 @@ def run_all(db, columns, var_pairs, E, tau, Ls, n_reps, n_cores):
 		run_pair(db, cause_var, cause_vec, effect_var, effect_vec, E, tau, Ls, n_reps, pool, rng)
 
 def run_pair(db, cause_var, cause_vec, effect_var, effect_vec, E, tau, Ls, n_reps, pool, rng):
+    assert tau != 0
+    if tau < 0:
+        tau = -tau
+        cause_vec = cause_vec[::-1]
+        effect_vec = effect_vec[::-1]
+    
 	library = make_embedding(effect_vec, E, tau)
 	assert library.shape[1] == E
 	predicted = cause_vec[(E-1)*tau:]

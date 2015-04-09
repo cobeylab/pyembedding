@@ -73,6 +73,7 @@ def make_embedding(x, E, tau=1, verify_all=False):
 	"""
 	# Preconditions
 	assert E > 0
+	assert tau > 0
 	assert len(x.shape) == 1
 	N = x.shape[0]
 	vec_span = tau * (E - 1) + 1
@@ -202,7 +203,7 @@ def ccm(X_train, y_train, X_test, y_test,
 			))
 		
 		if pool:
-			corrs = pool.map(ccm_single_mappable, arg_list)
+			corrs = pool.map(ccm_single_mappable, arg_list, chunksize=n_replicates/pool._processes)
 		else:
 			corrs = map(ccm_single_mappable, arg_list)
 		
