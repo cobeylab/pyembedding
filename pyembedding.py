@@ -236,6 +236,24 @@ def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distan
 	
 	return corr
 
+def nichkawde_embedding(x, E_max, neighbor_dt_min):
+    assert len(x.shape) == 1
+    
+    # Make a full embedding with maximum embedding dimension E_max;
+    # actual embedding will consist of columns of this full embedding.
+    X_full = make_embedding(x, E_max, tau=1)[::-1]
+    
+    # Initial member of embedding is simply x[t] = x[t - 0]
+    taus = (0)
+    for i in range(E_max):
+        X = X_full[:,taus]
+        D = compute_distances(X, X)
+        
+        for tau_next in range(E_max - i):
+            if tau_next in taus:
+                continue
+            
+
 if __name__ == '__main__':
 	os.chdir(os.path.dirname(__file__))
 	

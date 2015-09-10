@@ -1,0 +1,80 @@
+\documentclass[10pt]{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\newcommand{\bx}{\mathbf{x}}
+\newcommand{\bX}{\mathbf{X}}
+\newcommand{\btau}{\boldsymbol{\tau}}
+\newcommand{\reals}{\mathbb{R}}
+
+\title{Summary of Nichkawde embedding method}
+\author{Ed Baskerville}
+\date{10 September 2015}
+
+\begin{document}
+
+\maketitle
+
+
+\section{Summary}
+
+The idea of the method is to iteratively add dimensions to a time-delay embedding in a way that the new time-delay dimension maximizes the (average) distance, in the newly added dimension, to nearest neighbors in the existing embedding, per unit of change in the direction of each point's respective nearest neighbor. That is, the goal is to maximize the derivative of the new dimension in the direction of existing nearest neighbors. Hence the name: Maximizing Derivatives On Projection (MDOP).
+
+\section{Algorithm}
+
+Given a (discretized) time series $x_1, \ldots, x_n$, the goal is to construct a (discretized) embedding $\bX = \{ \bx_D, \ldots, \bx_n \}$, a set of points $\bx_i \in \reals^d$. The value $D$ is the maximum embedding dimension, and $d$ is the actual embedding dimension used.
+
+The embedding is defined by a subset $\btau = \{ \tau_1, \ldots, \tau_d \}$ of $\{0, \ldots, D - 1 \}$ of size $d$, such that
+
+\begin{align}
+\bx_i &= \{ x_{i - \tau_1}, \ldots , x_{i - \tau_d} \}
+\end{align}
+
+\subsection{Identifying the maximum embedding dimension}
+
+TODO: implement this; expand description. The maximum embedding dimension $D$ is chosen to be the dimension where a complete embedding has the minimum value of the Uzal cost function $L_k$.
+
+\subsection{Identifying the minimum time between nearest neighbors}
+
+TODO
+
+\subsection{Identifying the delay subset}
+
+Delays are chosen iteratively using MDOP. The first delay is always chosen to be $\tau_1 = 0$.
+
+The final delay is always chosen to be $\tau_d = D - 1$. The algorithm terminates when $D - 1$ is added to the delay set.
+
+Given a partial subset of delays $\btau_k$ whose last entry is $\tau_k < D - 1$, the next entry $\tau_{k+1}$ is chosen like so:
+
+\begin{enumerate}
+
+\item Identify the nearest neighbor $j$ for each point $i$ in the partial embedding defined by $\btau_k$, along with the Euclidean distance to that neighbor $\delta_{ijk}$.
+
+\item For each $\tau$, $\tau_{i + 1} < \tau \leq D - 1$, calculate the harmonic mean $\beta(\tau)$ of the directional derivative across points in the partial embedding defined by $\btau$:
+    
+    \begin{enumerate}
+    
+    \item Calculate the distance between each point $i$ and its nearest neighbor $j$ in the partial embedding, in the dimension defined by $\tau$,
+    \begin{align}
+    \delta_{ij}(\tau) &= | x_{i - \tau} - x_{j - \tau} | \, .
+    \end{align}
+    \item Calculate the directional derivative $\phi_{ij}'(\tau)$ for each point $i$:
+    \begin{align}
+    \phi_{ij}'(\tau) &= \frac{\delta_{ij}(\tau)}{\delta_{ijk}}
+    \end{align}
+    \item Calculate the harmonic mean directional derivative across points:
+    \begin{align}
+    \beta(\tau) &= \exp \left[
+        \frac{1}{n - D + 1}
+        \sum_{i=D}^n \log \phi_{ij}'(\tau)
+    \right]
+    \end{align}
+    \item Choose the $\tau$ with maximum $\beta(\tau)$: $\btau_{k+1} = \btau_k \cup \left\{ \tau \right\}$.
+    
+    
+    \end{enumerate}
+
+\end{enumerate}
+
+\end{document}
