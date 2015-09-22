@@ -1,0 +1,8 @@
+To install type 
+
+./configure
+make
+make install
+
+and observe the warnings :-)
+
