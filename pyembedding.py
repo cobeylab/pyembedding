@@ -152,11 +152,11 @@ def find_neighbors(D, n_neighbors):
     N = numpy.zeros((D.shape[0], n_neighbors), dtype=int)
     DN = numpy.zeros((D.shape[0], n_neighbors), dtype=float)
     for i in range(D.shape[0]):
-        N[i,:] = numpy.argpartition(D[:,i], range(n_neighbors))[:n_neighbors]
+        N[i,:] = numpy.argpartition(D[i,:], range(n_neighbors))[:n_neighbors]
         DN[i,:] = D[i, N[i,:]]
     return N, DN
 
-def nichkawde_embedding(x, E_max, neighbor_offset_min, preserve_indices=True):
+def nichkawde_embedding(x, E_max, theiler_window, preserve_indices=True):
     assert len(x.shape) == 1
     
     # Make a full embedding with maximum embedding dimension E_max;
@@ -166,15 +166,14 @@ def nichkawde_embedding(x, E_max, neighbor_offset_min, preserve_indices=True):
     # Initial member of embedding is simply x[t] = x[t - 0]
     taus = (0,)
     while taus[-1] < (E_max - 1):
-        print taus
         X = X_full[:,taus]
-        D = numpy.sqrt(squared_euclidean_distance(X, X))
+        D = euclidean_distance(X, X)
         
         # Don't want to use any exact matches
         D[D == 0.0] = float('inf')
         
         # Don't want to use any too close in time
-        for offset in range(neighbor_offset_min):
+        for offset in range(theiler_window):
             assign_diagonal(D, offset, float('nan'))
             if offset > 0:
                 assign_diagonal(D, -offset, float('nan'))
@@ -276,16 +275,21 @@ def uzal_parse_params(stderr_data):
             params['n_neighbors'] = int(pieces[1].split(' ')[0])
     return params
 
+def set_up_uzal_costfunc():
+    uzal_dir = os.path.join(SCRIPT_DIR, 'optimal_embedding')
+    costfunc_path = os.path.join(uzal_dir, 'source_c', 'costfunc')
+    if not os.path.exists(costfunc_path):
+        configure(uzal_dir)
+        make(uzal_dir)
+    
+    return costfunc_path
+        
+
 def uzal_cost(x):
     """Runs the Uzal et al. cost function for full embeddings. Allows the costfunc program
     to identify the maximum embedding size, Theiler window, etc.
     """
-    uzal_dir = os.path.join(SCRIPT_DIR, 'optimal_embedding')
-    costfunc_path = os.path.join(uzal_dir, 'source_c', 'costfunc')
-    
-    if not os.path.exists(costfunc_path):
-        configure(uzal_dir)
-        make(uzal_dir)
+    costfunc_path = set_up_uzal_costfunc()
     
     stdin_data = '\n'.join(['{0}'.format(xi) for xi in x])
     stdin_data += '\n'
@@ -295,10 +299,114 @@ def uzal_cost(x):
         ['stdin.amp']
     )
     
+    sys.stderr.write(stdout_data)
+    sys.stderr.write(stderr_data)
+    
     ms, Lks = uzal_parse_results(file_data_dict['stdin.amp'])
     params = uzal_parse_params(stderr_data)
     
     return ms, Lks, params
+
+def simplex_predict(X_train, Y_train, X_test, Y_test, n_neighbors=None, distances=None):
+    assert X_train.shape[0] == Y_train.shape[0]
+    assert X_test.shape[0] == Y_test.shape[0]
+    
+    assert X_train.shape[1:] == X_test.shape[1:]
+    assert Y_train.shape[1:] == Y_test.shape[1:]
+    
+    d = X_train.shape[1]
+    if n_neighbors is None:
+        n_neighbors = d + 1
+    assert n_neighbors >= d + 1
+    
+    # if test and training sets overlap, we need to be able to remove a test vector
+    # if it shows up in nearest neighbors
+    assert X_train.shape[0] > n_neighbors
+    
+    if distances is None:
+        distances = euclidean_distance(X_train, X_test)
+    assert distances.shape[0] == X_train.shape[0]
+    assert distances.shape[1] == X_test.shape[0]
+    
+    # print n_neighbors
+    
+    Y_pred = numpy.zeros(Y_test.shape)
+    
+    assert distances.shape[1] == Y_pred.shape[0]
+    
+    neighbor_inds, neighbor_dists = find_neighbors(distances.T, n_neighbors)
+    for i in range(Y_test.shape[0]):
+        weights = numpy.exp(-neighbor_dists[i,:] / neighbor_dists[i,0])
+        weights /= numpy.sum(weights)
+        
+        Y_pred[i] = numpy.dot(weights, Y_train[neighbor_inds[i,:]])
+    
+    return Y_pred
+
+def ccm(X_train, y_train, X_test, y_test,
+    Ls=None, n_neighbors=None, n_replicates=100, replace=False, distances=None,
+    L_callback=None, rep_callback=None, rng=None
+):
+    if rng is None:
+        rng = random.SystemRandom()
+    
+    if Ls is None:
+        if n_neighbors is None:
+            Ls = [X_train.shape[1] + 2, X_train.shape[0]]
+        else:
+            Ls = [n_neighbors + 1, X_train.shape[0]]
+    
+    if distances is None:
+        distances = euclidean_distance(X_train, X_test)
+        assign_diagonal(distances, 0, float('nan'))
+    
+    results_list = list()
+    for index_L, L in enumerate(Ls):
+        if L_callback:
+            L_callback(L, None)
+        
+        n_reps_L = 1 if (X_train.shape[0] == L and not replace) else n_replicates
+        
+        arg_list = list()
+        for rep_id in xrange(n_replicates):
+            seed = rng.randint(1, 2**32 - 1)
+            arg_list.append((
+                X_train, y_train, X_test, y_test, L, n_neighbors, replace, distances, rep_id, seed,
+                rep_callback
+            ))
+        
+        corrs = map(ccm_single_mappable, arg_list)
+        
+        if L_callback:
+            L_callback(L, corrs)
+        
+        results_list.append([L, corrs])
+    return results_list
+
+def ccm_single_mappable(arg):
+    return ccm_single(*arg)
+
+def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distances, rep_id, seed, rep_callback):
+    rng = numpy.random.RandomState(seed)
+    indexes = rng.choice(X_train.shape[0], size=L, replace=replace)
+    X_train_rep = X_train[indexes,:]
+    y_train_rep = y_train[indexes]
+    y_pred = simplex_predict(
+        X_train_rep, y_train_rep,
+        X_test, y_test,
+        n_neighbors=n_neighbors,
+        distances=distances[indexes,:]
+    )
+    valid_inds = numpy.logical_not(numpy.logical_or(
+        numpy.isnan(y_pred),
+        numpy.isinf(y_pred)
+    ))
+    corr = numpy.corrcoef(y_test[valid_inds], y_pred[valid_inds])[0,1]
+    
+    if rep_callback:
+        rep_callback(L, corr, indexes, X_train_rep, y_train_rep, y_pred)
+    
+    return corr
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
