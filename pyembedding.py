@@ -358,7 +358,6 @@ def ccm(X_train, y_train, X_test, y_test,
     
     if distances is None:
         distances = euclidean_distance(X_train, X_test)
-        assign_diagonal(distances, 0, float('nan'))
     
     results_list = list()
     for index_L, L in enumerate(Ls):
@@ -388,9 +387,11 @@ def ccm_single_mappable(arg):
 
 def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distances, rep_id, seed, rep_callback):
     rng = numpy.random.RandomState(seed)
+    
     indexes = rng.choice(X_train.shape[0], size=L, replace=replace)
     X_train_rep = X_train[indexes,:]
     y_train_rep = y_train[indexes]
+    
     y_pred = simplex_predict(
         X_train_rep, y_train_rep,
         X_test, y_test,
