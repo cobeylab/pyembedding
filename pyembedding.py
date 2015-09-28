@@ -325,6 +325,7 @@ def simplex_predict(X_train, Y_train, X_test, Y_test, n_neighbors=None, distance
     
     if distances is None:
         distances = euclidean_distance(X_train, X_test)
+    
     assert distances.shape[0] == X_train.shape[0]
     assert distances.shape[1] == X_test.shape[0]
     
@@ -356,8 +357,8 @@ def ccm(X_train, y_train, X_test, y_test,
         else:
             Ls = [n_neighbors + 1, X_train.shape[0]]
     
-    if distances is None:
-        distances = euclidean_distance(X_train, X_test)
+    #if distances is None:
+    #    distances = euclidean_distance(X_train, X_test)
     
     results_list = list()
     for index_L, L in enumerate(Ls):
@@ -387,6 +388,10 @@ def ccm_single_mappable(arg):
 
 def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distances, rep_id, seed, rep_callback):
     rng = numpy.random.RandomState(seed)
+    
+#     sys.stderr.write('distances.shape = {0}; X_train.shape = {1}; X_test.shape = {2}\n'.format(distances.shape, X_train.shape, X_test.shape))
+    
+    assert L <= X_train.shape[0]
     
     indexes = rng.choice(X_train.shape[0], size=L, replace=replace)
     X_train_rep = X_train[indexes,:]
