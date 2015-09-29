@@ -24,6 +24,8 @@ def make_partial_embedding(x, taus, preserve_indices=True):
     assert len(x.shape) == 1
     assert len(taus.shape) == 1
     
+    # sys.stderr.write('x.shape: {0}; taus : {1}\n'.format(x.shape, taus))
+    
     N = x.shape[0]
     E = taus.shape[0]
     
@@ -317,14 +319,13 @@ def simplex_predict(X_train, Y_train, X_test, Y_test, n_neighbors=None, distance
     d = X_train.shape[1]
     if n_neighbors is None:
         n_neighbors = d + 1
-    assert n_neighbors >= d + 1
     
-    # if test and training sets overlap, we need to be able to remove a test vector
-    # if it shows up in nearest neighbors
-    assert X_train.shape[0] > n_neighbors
+#     sys.stderr.write('X_train.shape: {0}, Y_train.shape: {1}, X_test.shape : {2}, Y_test.shape : {3}, n_neighbors: {4}\n'.format(
+#         X_train.shape, Y_train.shape, X_test.shape, Y_test.shape, n_neighbors
+#     ))
     
-    if distances is None:
-        distances = euclidean_distance(X_train, X_test)
+#     if distances is None:
+#         distances = euclidean_distance(X_train, X_test)
     
     assert distances.shape[0] == X_train.shape[0]
     assert distances.shape[1] == X_test.shape[0]
@@ -357,8 +358,8 @@ def ccm(X_train, y_train, X_test, y_test,
         else:
             Ls = [n_neighbors + 1, X_train.shape[0]]
     
-    #if distances is None:
-    #    distances = euclidean_distance(X_train, X_test)
+    if distances is None:
+        distances = euclidean_distance(X_train, X_test)
     
     results_list = list()
     for index_L, L in enumerate(Ls):
@@ -407,6 +408,7 @@ def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distan
         numpy.isnan(y_pred),
         numpy.isinf(y_pred)
     ))
+    assert len(valid_inds) > 0
     corr = numpy.corrcoef(y_test[valid_inds], y_pred[valid_inds])[0,1]
     
     if rep_callback:
