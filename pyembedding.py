@@ -338,7 +338,10 @@ def simplex_predict(X_train, Y_train, X_test, Y_test, n_neighbors=None, distance
     
     neighbor_inds, neighbor_dists = find_neighbors(distances.T, n_neighbors)
     for i in range(Y_test.shape[0]):
-        weights = numpy.exp(-neighbor_dists[i,:] / neighbor_dists[i,0])
+        if neighbor_dists[i,0] == 0.0:
+            weights = numpy.ones(n_neighbors, dtype=float)
+        else:
+            weights = numpy.exp(-neighbor_dists[i,:] / neighbor_dists[i,0])
         weights /= numpy.sum(weights)
         
         Y_pred[i] = numpy.dot(weights, Y_train[neighbor_inds[i,:]])
@@ -352,14 +355,14 @@ def ccm(X_train, y_train, X_test, y_test,
     if rng is None:
         rng = random.SystemRandom()
     
-    if Ls is None:
-        if n_neighbors is None:
-            Ls = [X_train.shape[1] + 2, X_train.shape[0]]
-        else:
-            Ls = [n_neighbors + 1, X_train.shape[0]]
-    
-    if distances is None:
-        distances = euclidean_distance(X_train, X_test)
+#    if Ls is None:
+#        if n_neighbors is None:
+#            Ls = [X_train.shape[1] + 2, X_train.shape[0]]
+#        else:
+#            Ls = [n_neighbors + 1, X_train.shape[0]]
+#    
+#    if distances is None:
+#        distances = euclidean_distance(X_train, X_test)
     
     results_list = list()
     for index_L, L in enumerate(Ls):
@@ -390,7 +393,7 @@ def ccm_single_mappable(arg):
 def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distances, rep_id, seed, rep_callback):
     rng = numpy.random.RandomState(seed)
     
-#     sys.stderr.write('distances.shape = {0}; X_train.shape = {1}; X_test.shape = {2}\n'.format(distances.shape, X_train.shape, X_test.shape))
+    #sys.stderr.write('distances.shape = {0}; X_train.shape = {1}; X_test.shape = {2}\n'.format(distances.shape, X_train.shape, X_test.shape))
     
     assert L <= X_train.shape[0]
     
@@ -404,12 +407,16 @@ def ccm_single(X_train, y_train, X_test, y_test, L, n_neighbors, replace, distan
         n_neighbors=n_neighbors,
         distances=distances[indexes,:]
     )
+    #sys.stderr.write('distances: {0}\n'.format(distances))
     valid_inds = numpy.logical_not(numpy.logical_or(
         numpy.isnan(y_pred),
         numpy.isinf(y_pred)
     ))
-    assert len(valid_inds) > 0
+    #sys.stderr.write('y_pred.shape: {0}\n'.format(y_pred.shape))
+    assert numpy.sum(valid_inds) > 0
     corr = numpy.corrcoef(y_test[valid_inds], y_pred[valid_inds])[0,1]
+    if numpy.isnan(corr):
+        corr = 1.0
     
     if rep_callback:
         rep_callback(L, corr, indexes, X_train_rep, y_train_rep, y_pred)
