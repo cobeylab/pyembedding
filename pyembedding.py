@@ -352,14 +352,14 @@ def ccm(X_train, y_train, X_test, y_test,
     if rng is None:
         rng = random.SystemRandom()
     
-    if Ls is None:
-        if n_neighbors is None:
-            Ls = [X_train.shape[1] + 2, X_train.shape[0]]
-        else:
-            Ls = [n_neighbors + 1, X_train.shape[0]]
-    
-    if distances is None:
-        distances = euclidean_distance(X_train, X_test)
+#     if Ls is None:
+#         if n_neighbors is None:
+#             Ls = [X_train.shape[1] + 2, X_train.shape[0]]
+#         else:
+#             Ls = [n_neighbors + 1, X_train.shape[0]]
+#     
+#     if distances is None:
+#         distances = euclidean_distance(X_train, X_test)
     
     results_list = list()
     for index_L, L in enumerate(Ls):
