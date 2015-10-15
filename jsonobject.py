@@ -65,6 +65,43 @@ class JSONObject(object):
             return super(JSONObject, self).__getattr__(self, item)
         return self.odict[item]
 
+    def load_from_file(self, f):
+        '''
+
+        :param f:
+        :return:
+
+        >>> json_obj = JSONObject([('foo', 5), ('bar', 7), ('baz', [1,2,3,4])])
+        >>> json_file = cStringIO.StringIO('{"bar" : 8}')
+        >>> json_obj.load_from_file(json_file)
+        >>> json_obj.foo
+        5
+        >>> json_obj.bar
+        8
+        >>> json_obj.baz.tolist()
+        [1, 2, 3, 4]
+        '''
+        json_obj = load_from_file(f)
+        self.odict.update(json_obj.odict)
+
+    def load_from_string(self, s):
+        '''
+
+        :param f:
+        :return:
+
+        >>> json_obj = JSONObject([('foo', 5), ('bar', 7), ('baz', [1,2,3,4])])
+        >>> json_obj.load_from_string('{"bar" : 8}')
+        >>> json_obj.foo
+        5
+        >>> json_obj.bar
+        8
+        >>> json_obj.baz.tolist()
+        [1, 2, 3, 4]
+        '''
+        json_obj = load_from_string(s)
+        self.odict.update(json_obj.odict)
+
     def dump_to_file(self, f):
         '''
         :return:
