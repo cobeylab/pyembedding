@@ -110,7 +110,7 @@ class Embedding:
 
         return Embedding(self.x, self.delays, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds])
 
-    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=0):
+    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=1):
         '''
         :param neighbor_count:
         :param embedding:
@@ -118,11 +118,11 @@ class Embedding:
         :return:
 
         >>> a = Embedding([1, 2, 3, 5, 8, 13, 21], delays=(0,2))
-        >>> dn, tn = a.find_neighbors_from_embedding(3, a, theiler_window=2)
+        >>> dn, tn = a.find_neighbors_from_embedding(3, a, theiler_window=3)
         >>> tn.tolist()
         [[5, 6, -1], [6, -1, -1], [-1, -1, -1], [2, -1, -1], [3, 2, -1]]
         '''
-        assert theiler_window is not None
+        assert theiler_window >= 0
         return self.find_neighbors(neighbor_count, embedding.embedding_mat, theiler_window=theiler_window, t_query=embedding.t)
 
     def find_neighbors(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
@@ -144,46 +144,46 @@ class Embedding:
         (1, 1)
         >>> tn1_a[0,0]
         1
-        >>> dn2_a, tn2_a = a.find_neighbors(1, [[2, 1]], theiler_window=None, t_query=None)
+        >>> dn2_a, tn2_a = a.find_neighbors(1, [[2, 1]], theiler_window=0, t_query=None)
         >>> '{0:.4f}'.format(dn2_a[0,0])
         '0.0000'
         >>> tn2_a[0,0]
         1
-        >>> dn3_a, tn3_a = a.find_neighbors(1, [[2, 1]], theiler_window=0, t_query=[1])
+        >>> dn3_a, tn3_a = a.find_neighbors(1, [[2, 1]], theiler_window=1, t_query=[1])
         >>> '{0:.4f}'.format(dn3_a[0,0])
         '1.4142'
         >>> tn3_a[0,0]
         2
-        >>> dn4_a, tn4_a = a.find_neighbors(4, [[2,1]], theiler_window=None, t_query=None)
+        >>> dn4_a, tn4_a = a.find_neighbors(4, [[2,1]], theiler_window=0, t_query=None)
         >>> tn4_a[0,:].tolist()
         [1, 2, 3, -1]
-        >>> dn5_a, tn5_a = a.find_neighbors(1, [[2,1]], theiler_window=1, t_query=[1])
+        >>> dn5_a, tn5_a = a.find_neighbors(1, [[2,1]], theiler_window=2, t_query=[1])
         >>> tn5_a[0,:].tolist()
         [3]
-        >>> dn6_a, tn6_a = a.find_neighbors(1, [[2,1]], theiler_window=2, t_query=[1])
+        >>> dn6_a, tn6_a = a.find_neighbors(1, [[2,1]], theiler_window=3, t_query=[1])
         >>> tn6_a[0,:].tolist()
         [-1]
         >>> dn6_a[0,0]
         inf
-        >>> dn7_a, tn7_a = a.find_neighbors(1, [[2,1]], theiler_window=3, t_query=[1])
+        >>> dn7_a, tn7_a = a.find_neighbors(1, [[2,1]], theiler_window=4, t_query=[1])
         >>> tn7_a[0,:].tolist()
         [-1]
         >>> dn7_a[0,0]
         inf
 
         >>> b = Embedding([1, 2, 3, 5, 8, 13, 21], delays=(0,2))
-        >>> dn1_b, tn1_b = b.find_neighbors(1, [[3, 1], [8, 3], [21, 8]], theiler_window=None, t_query=None)
+        >>> dn1_b, tn1_b = b.find_neighbors(1, [[3, 1], [8, 3], [21, 8]], theiler_window=0, t_query=None)
         >>> dn1_b[:,0].tolist()
         [0.0, 0.0, 0.0]
         >>> tn1_b[:,0].tolist()
         [2, 4, 6]
-        >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=0, t_query=[2, 3, 4, 5, 6])
-        >>> tn2_b.tolist()
-        [[3, 4, 5], [2, 4, 5], [3, 5, 2], [4, 6, 3], [5, 4, 3]]
         >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=1, t_query=[2, 3, 4, 5, 6])
         >>> tn2_b.tolist()
-        [[4, 5, 6], [5, 6, -1], [2, 6, -1], [3, 2, -1], [4, 3, 2]]
+        [[3, 4, 5], [2, 4, 5], [3, 5, 2], [4, 6, 3], [5, 4, 3]]
         >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=2, t_query=[2, 3, 4, 5, 6])
+        >>> tn2_b.tolist()
+        [[4, 5, 6], [5, 6, -1], [2, 6, -1], [3, 2, -1], [4, 3, 2]]
+        >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=3, t_query=[2, 3, 4, 5, 6])
         >>> tn2_b.tolist()
         [[5, 6, -1], [6, -1, -1], [-1, -1, -1], [2, -1, -1], [3, 2, -1]]
         '''
@@ -192,10 +192,11 @@ class Embedding:
         if t_query is not None and not isinstance(t_query, numpy.ndarray):
             t_query = numpy.array(t_query)
 
+        assert theiler_window >= 0
         assert neighbor_count > 0
         assert query_vectors.shape[0] > 0
         assert query_vectors.shape[1] == self.embedding_dimension
-        assert (t_query is None and theiler_window is None) or theiler_window >= 0
+        assert theiler_window == 0 or t_query is not None
         assert t_query is None or t_query.shape[0] == query_vectors.shape[0]
 
         if self.kdtree is None:
@@ -228,7 +229,7 @@ class Embedding:
             tn_i[ind_present] = self.t[ind_i[ind_present]]
 
             # If there are no times to check against Theiler window, we're done immediately
-            if t_query is None:
+            if theiler_window == 0:
                 dist = dist_i
                 tn = tn_i
                 break
@@ -238,7 +239,7 @@ class Embedding:
             for ni in range(k):
                 too_close = numpy.logical_and(
                     tn_i[:,ni] != -1,
-                    numpy.abs(tn_i[:,ni] - tq_i) <= theiler_window
+                    numpy.abs(tn_i[:,ni] - tq_i) < theiler_window
                 )
                 tn_i[too_close,ni] = -2
 
@@ -290,6 +291,73 @@ class Embedding:
 
 
         return dist, tn
+
+    def simplex_predict(self, X, y, t, neighbor_count=None, theiler_window=0):
+        '''
+
+        :param t:
+        :param y_t:
+        :param neighbor_count:
+        :param query_vectors:
+        :param theiler_window:
+        :return:
+
+        >>> a = Embedding([1, 2, 1, 2, 1, 2, 1], delays=(0,))
+        >>> y = [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=0).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=2, theiler_window=0).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=3, theiler_window=0).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=4, theiler_window=0).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=10, theiler_window=0).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=3, theiler_window=0).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        '''
+
+        if neighbor_count is None:
+            neighbor_count = self.embedding_dimension + 1
+
+        if not isinstance(X, numpy.ndarray):
+            X = numpy.array(X)
+        if not isinstance(y, numpy.ndarray):
+            y = numpy.array(y)
+        if not isinstance(t, numpy.ndarray):
+            t = numpy.array(t)
+
+        assert X.shape[0] == t.shape[0]
+        assert y.shape[0] == self.x.shape[0]
+        assert X.shape[1] == self.embedding_dimension
+
+        dn, tn = self.find_neighbors(neighbor_count, X, theiler_window=theiler_window, t_query=t)
+
+        assert numpy.isnan(dn).sum() == 0
+        invalid = numpy.isinf(dn[:,0])
+        valid = numpy.logical_not(invalid)
+
+        # Adjust rows where min distance is 0 so that zero distances are set to 1 and other distances are set to inf
+        min_is_zero = dn[:,0] == 0
+        dn[min_is_zero,0] = 1
+        for i in range(1, neighbor_count):
+            is_nonzero_with_zero_min = numpy.logical_and(min_is_zero, dn[:,i] > 0)
+            dn[is_nonzero_with_zero_min,i] = float('inf')
+            dn[dn[:,i] == 0, i] = 1
+
+        # Calculate weights from distances normalized by nearest neighbor
+        y_pred = numpy.zeros(X.shape[0])
+
+        weights = numpy.zeros_like(dn)
+        for i in range(neighbor_count):
+            weights[valid,i] = numpy.exp(-dn[valid,i] / dn[:,0])
+        weights_sum = numpy.sum(weights, axis=1)
+        for i in range(neighbor_count):
+            y_pred[valid] += y[tn[valid,i]] * weights[valid,i] / weights_sum[valid]
+        y_pred[invalid] = float('nan')
+
+        return y_pred
 
     def get_embedding_dimension(self):
         return len(self.delays)
