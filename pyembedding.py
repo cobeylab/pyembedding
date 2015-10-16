@@ -57,10 +57,8 @@ class Embedding:
         else:
             self.embedding_mat = embedding_mat
             self.t = t
-        if self.embedding_mat.shape[0] == 0:
-            self.kdtree = None
-        else:
-            self.kdtree = cKDTree(self.embedding_mat)
+
+        self.kdtree = None
 
     def construct_embedding_matrix(self):
         min_delay = numpy.min(self.delays)
@@ -112,7 +110,11 @@ class Embedding:
 
         return Embedding(self.x, self.delays, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds])
 
-    def find_neighbors(self, neighbor_count, query_vectors, theiler_window=1, t_query=None):
+    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=0):
+        assert theiler_window is not None
+        return self.find_neighbors(self, neighbor_count, embedding.embdding_mat, theiler_window=theiler_window, t_query=embedding.t)
+
+    def find_neighbors(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
         '''
 
         :param neighbor_count:
@@ -184,6 +186,9 @@ class Embedding:
         assert query_vectors.shape[1] == self.embedding_dimension
         assert (t_query is None and theiler_window is None) or theiler_window >= 0
         assert t_query is None or t_query.shape[0] == query_vectors.shape[0]
+
+        if self.kdtree is None:
+            self.kdtree = cKDTree(self.embedding_mat)
 
         # Start with infinite distances and missing neighbor times (-1)
         dist = numpy.ones((query_vectors.shape[0], neighbor_count), dtype=float) * float('inf')
