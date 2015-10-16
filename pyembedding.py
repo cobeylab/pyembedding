@@ -111,8 +111,19 @@ class Embedding:
         return Embedding(self.x, self.delays, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds])
 
     def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=0):
+        '''
+        :param neighbor_count:
+        :param embedding:
+        :param theiler_window:
+        :return:
+
+        >>> a = Embedding([1, 2, 3, 5, 8, 13, 21], delays=(0,2))
+        >>> dn, tn = a.find_neighbors_from_embedding(3, a, theiler_window=2)
+        >>> tn.tolist()
+        [[5, 6, -1], [6, -1, -1], [-1, -1, -1], [2, -1, -1], [3, 2, -1]]
+        '''
         assert theiler_window is not None
-        return self.find_neighbors(self, neighbor_count, embedding.embdding_mat, theiler_window=theiler_window, t_query=embedding.t)
+        return self.find_neighbors(neighbor_count, embedding.embedding_mat, theiler_window=theiler_window, t_query=embedding.t)
 
     def find_neighbors(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
         '''
