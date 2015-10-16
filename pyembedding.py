@@ -121,6 +121,11 @@ class Embedding:
         >>> dn, tn = a.find_neighbors_from_embedding(3, a, theiler_window=3)
         >>> tn.tolist()
         [[5, 6, -1], [6, -1, -1], [-1, -1, -1], [2, -1, -1], [3, 2, -1]]
+
+        >>> b = Embedding([1, 2, 1, 2, 1, 2, 1], delays=(0,))
+        >>> dn, tn = b.find_neighbors_from_embedding(1, b, theiler_window=1)
+        >>> tn[:,0].tolist()
+        [2, 3, 0, 1, 0, 1, 0]
         '''
         assert theiler_window >= 0
         return self.find_neighbors(neighbor_count, embedding.embedding_mat, theiler_window=theiler_window, t_query=embedding.t)
@@ -243,10 +248,6 @@ class Embedding:
                 )
                 tn_i[too_close,ni] = -2
 
-            # dist = dist_i
-            # tn = tn_i
-            # break
-
             # Calculate number of valid neighbors
             n_valid = (tn_i >= 0).sum(axis=1)
             min_n_valid = numpy.min(n_valid)
@@ -258,6 +259,7 @@ class Embedding:
             # Efficiently assign distances for rows that don't need to be modified
             not_too_close_no_missing = numpy.logical_not(numpy.logical_or(has_too_close, has_missing))
             dist[unfinished_ind[not_too_close_no_missing],:] = dist_i[not_too_close_no_missing,:neighbor_count]
+            tn[unfinished_ind[not_too_close_no_missing],:] = tn_i[not_too_close_no_missing,:neighbor_count]
 
             # Assign distances one-by-one for rows that have run out of valid neighbors,
             # or that have enough valid neighbors but also some that are too close in time
@@ -315,6 +317,8 @@ class Embedding:
         >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=10, theiler_window=0).tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
         >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=3, theiler_window=0).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=1).tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
         '''
 
