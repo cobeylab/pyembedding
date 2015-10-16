@@ -15,6 +15,7 @@ import shutil
 import time
 from collections import OrderedDict
 from numba import jit
+import jsonobject
 
 class Embedding:
     '''
@@ -350,9 +351,38 @@ class Embedding:
         # sys.stderr.write('tn = {0}'.format(tn))
         return dn, tn
 
-    def simplex_predict_from_embedding(self, embedding, y, neighbor_count=None, theiler_window=0, use_kdtree=True):
-        return self.simplex_predict(embedding.embedding_mat, y, embedding.t, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree)
-    
+    def ccm(self, query_embedding, y_full, neighbor_count=None, theiler_window=1, use_kdtree=True):
+
+        y_actual, y_pred = self.simplex_predict_using_embedding(
+            query_embedding, y_full, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree
+        )
+        invalid = numpy.isnan(y_pred)
+        valid = numpy.logical_not(invalid)
+        valid_count = valid.sum()
+
+        sd_actual = numpy.std(y_actual[valid])
+        sd_pred = numpy.std(y_pred[valid])
+
+        if valid_count == 0:
+            corr = float('nan')
+        elif sd_actual == 0 and sd_pred == 0:
+            corr = 1.0
+        elif sd_actual == 0 or sd_pred == 0:
+            corr = 0.0
+        else:
+            corr = numpy.corrcoef(y_actual[valid], y_pred[valid])[0,1]
+
+        return jsonobject.JSONObject([
+            ('correlation', corr),
+            ('valid_count', valid_count),
+            ('sd_actual', sd_actual),
+            ('sd_predicted', sd_pred)
+        ]), y_actual, y_pred
+
+
+    def simplex_predict_using_embedding(self, query_embedding, y, neighbor_count=None, theiler_window=0, use_kdtree=True):
+        return self.simplex_predict(query_embedding.embedding_mat, y, query_embedding.t, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree)
+
     def simplex_predict(self, X, y, t, neighbor_count=None, theiler_window=0, use_kdtree=True):
         '''
 
@@ -365,31 +395,31 @@ class Embedding:
 
         >>> a = Embedding([1, 2, 1, 2, 1, 2, 1], delays=(0,))
         >>> y = [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=0).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=0)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=2, theiler_window=0).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=2, theiler_window=0)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=3, theiler_window=0).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=3, theiler_window=0)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=4, theiler_window=0).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=4, theiler_window=0)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=10, theiler_window=0).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=10, theiler_window=0)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=3, theiler_window=0).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=3, theiler_window=0)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=1).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=1)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=2).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=2)[1].tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=3).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=3)[1].tolist()
         [2.0, 1.0, 2.0, 2.0, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=4).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=4)[1].tolist()
         [2.0, 1.0, 2.0, nan, 2.0, 1.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=5).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=5)[1].tolist()
         [2.0, 2.0, nan, nan, nan, 2.0, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=6).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=6)[1].tolist()
         [2.0, nan, nan, nan, nan, nan, 2.0]
-        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=7).tolist()
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=7)[1].tolist()
         [nan, nan, nan, nan, nan, nan, nan]
         '''
 
@@ -432,7 +462,7 @@ class Embedding:
             y_pred[valid] += y[tn[valid,i]] * weights[valid,i] / weights_sum[valid]
         y_pred[invalid] = float('nan')
 
-        return y_pred
+        return y[t], y_pred
 
     def get_embedding_dimension(self):
         return len(self.delays)
@@ -465,7 +495,7 @@ class TestEmbedding(unittest.TestCase):
 
         for neighbor_count in range(1, 10):
             for theiler_window in range(10):
-                y_pred = c.simplex_predict_from_embedding()
+                y, y_pred = c.simplex_predict_from_embedding()
                 dns_c, tns_c = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, use_kdtree=False)
                 self.assertTrue(numpy.array_equal(dnk_c, dns_c))
                 self.assertTrue(numpy.array_equal(tnk_c, tns_c))
