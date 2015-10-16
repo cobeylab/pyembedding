@@ -6,6 +6,7 @@ SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 import random
 import numpy
 from scipy.spatial import cKDTree
+from scipy.spatial.distance import cdist
 import subprocess
 import tempfile
 import shutil
@@ -110,7 +111,7 @@ class Embedding:
 
         return Embedding(self.x, self.delays, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds])
 
-    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=1):
+    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=1, use_kdtree=True):
         '''
         :param neighbor_count:
         :param embedding:
@@ -128,9 +129,9 @@ class Embedding:
         [2, 3, 0, 1, 0, 1, 0]
         '''
         assert theiler_window >= 0
-        return self.find_neighbors(neighbor_count, embedding.embedding_mat, theiler_window=theiler_window, t_query=embedding.t)
+        return self.find_neighbors(neighbor_count, embedding.embedding_mat, theiler_window=theiler_window, t_query=embedding.t, use_kdtree=use_kdtree)
 
-    def find_neighbors(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
+    def find_neighbors(self, neighbor_count, query_vectors, theiler_window=0, t_query=None, use_kdtree=True):
         '''
 
         :param neighbor_count:
@@ -191,6 +192,19 @@ class Embedding:
         >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=3, t_query=[2, 3, 4, 5, 6])
         >>> tn2_b.tolist()
         [[5, 6, -1], [6, -1, -1], [-1, -1, -1], [2, -1, -1], [3, 2, -1]]
+        >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=3, t_query=[2, 3, 4, 5, 6], use_kdtree=False)
+        >>> tn2_b.tolist()
+        [[5, 6, -1], [6, -1, -1], [-1, -1, -1], [2, -1, -1], [3, 2, -1]]
+
+        >>> rng = numpy.random.RandomState(seed=1)
+        >>> x = numpy.random.normal(0, 1, 100)
+        >>> c = Embedding(x, delays=(0,))
+        >>> dnk_c, tnk_c = c.find_neighbors_from_embedding(1, c, theiler_window=0, use_kdtree=True)
+        >>> dns_c, tns_c = c.find_neighbors_from_embedding(1, c, theiler_window=0, use_kdtree=False)
+        >>> numpy.array_equal(dnk_c, dns_c)
+        True
+        >>> numpy.array_equal(tnk_c, tns_c)
+        True
         '''
         if not isinstance(query_vectors, numpy.ndarray):
             query_vectors = numpy.array(query_vectors)
@@ -204,6 +218,12 @@ class Embedding:
         assert theiler_window == 0 or t_query is not None
         assert t_query is None or t_query.shape[0] == query_vectors.shape[0]
 
+        if use_kdtree:
+            return self.find_neighbors_kdtree(neighbor_count, query_vectors, theiler_window=theiler_window, t_query=t_query)
+        else:
+            return self.find_neighbors_stupid(neighbor_count, query_vectors, theiler_window=theiler_window, t_query=t_query)
+
+    def find_neighbors_kdtree(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
         if self.kdtree is None:
             self.kdtree = cKDTree(self.embedding_mat)
 
@@ -294,7 +314,32 @@ class Embedding:
 
         return dist, tn
 
-    def simplex_predict(self, X, y, t, neighbor_count=None, theiler_window=0):
+    def find_neighbors_stupid(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
+        dmat = cdist(query_vectors, self.embedding_mat)
+
+        dn = numpy.ones((query_vectors.shape[0], neighbor_count)) * float('inf')
+        tn = -numpy.ones((query_vectors.shape[0], neighbor_count), dtype=int)
+
+        for i in range(dmat.shape[0]):
+            dn_i = []
+            tn_i = []
+            for j in numpy.argsort(dmat[i,:]):
+                # sys.stderr.write('{0}: dmat[i,j] = {1}, dt = {2}\n'.format(j, dmat[i,j], t_query[i] - self.t[j]))
+                if (theiler_window == 0 and t_query is None) or numpy.abs(t_query[i] - self.t[j]) >= theiler_window:
+                    tn_i.append(self.t[j])
+                    dn_i.append(dmat[i,j])
+                if len(tn_i) == neighbor_count:
+                    break
+            dn[i,:len(dn_i)] = dn_i
+            tn[i,:len(tn_i)] = tn_i
+        # sys.stderr.write('dn = {0}'.format(dn))
+        # sys.stderr.write('tn = {0}'.format(tn))
+        return dn, tn
+
+    def simplex_predict_from_embedding(self, embedding, y, neighbor_count=None, theiler_window=0, use_kdtree=True):
+        return self.simplex_predict(embedding.embedding_mat, y, embedding.t, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree)
+
+    def simplex_predict(self, X, y, t, neighbor_count=None, theiler_window=0, use_kdtree=True):
         '''
 
         :param t:
@@ -320,6 +365,18 @@ class Embedding:
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
         >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=1).tolist()
         [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=2).tolist()
+        [2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=3).tolist()
+        [2.0, 1.0, 2.0, 2.0, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=4).tolist()
+        [2.0, 1.0, 2.0, nan, 2.0, 1.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=5).tolist()
+        [2.0, 2.0, nan, nan, nan, 2.0, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=6).tolist()
+        [2.0, nan, nan, nan, nan, nan, 2.0]
+        >>> a.simplex_predict(a.embedding_mat, y, a.t, neighbor_count=1, theiler_window=7).tolist()
+        [nan, nan, nan, nan, nan, nan, nan]
         '''
 
         if neighbor_count is None:
@@ -336,7 +393,7 @@ class Embedding:
         assert y.shape[0] == self.x.shape[0]
         assert X.shape[1] == self.embedding_dimension
 
-        dn, tn = self.find_neighbors(neighbor_count, X, theiler_window=theiler_window, t_query=t)
+        dn, tn = self.find_neighbors(neighbor_count, X, theiler_window=theiler_window, t_query=t, use_kdtree=use_kdtree)
 
         assert numpy.isnan(dn).sum() == 0
         invalid = numpy.isinf(dn[:,0])
@@ -355,7 +412,7 @@ class Embedding:
 
         weights = numpy.zeros_like(dn)
         for i in range(neighbor_count):
-            weights[valid,i] = numpy.exp(-dn[valid,i] / dn[:,0])
+            weights[valid,i] = numpy.exp(-dn[valid,i] / dn[valid,0])
         weights_sum = numpy.sum(weights, axis=1)
         for i in range(neighbor_count):
             y_pred[valid] += y[tn[valid,i]] * weights[valid,i] / weights_sum[valid]
