@@ -131,7 +131,7 @@ class Embedding:
         (1, 1)
         >>> tn1_a[0,0]
         1
-        >>> dn2_a, tn2_a = a.find_neighbors(1, [[2, 1]], theiler_window=0, t_query=None)
+        >>> dn2_a, tn2_a = a.find_neighbors(1, [[2, 1]], theiler_window=None, t_query=None)
         >>> '{0:.4f}'.format(dn2_a[0,0])
         '0.0000'
         >>> tn2_a[0,0]
@@ -141,9 +141,38 @@ class Embedding:
         '1.4142'
         >>> tn3_a[0,0]
         2
-        >>> dn4_a, tn4_a = a.find_neighbors(4, [[2,1]], theiler_window=0, t_query=None)
+        >>> dn4_a, tn4_a = a.find_neighbors(4, [[2,1]], theiler_window=None, t_query=None)
         >>> tn4_a[0,:].tolist()
         [1, 2, 3, -1]
+        >>> dn5_a, tn5_a = a.find_neighbors(1, [[2,1]], theiler_window=1, t_query=[1])
+        >>> tn5_a[0,:].tolist()
+        [3]
+        >>> dn6_a, tn6_a = a.find_neighbors(1, [[2,1]], theiler_window=2, t_query=[1])
+        >>> tn6_a[0,:].tolist()
+        [-1]
+        >>> dn6_a[0,0]
+        inf
+        >>> dn7_a, tn7_a = a.find_neighbors(1, [[2,1]], theiler_window=3, t_query=[1])
+        >>> tn7_a[0,:].tolist()
+        [-1]
+        >>> dn7_a[0,0]
+        inf
+
+        >>> b = Embedding([1, 2, 3, 5, 8, 13, 21], delays=(0,2))
+        >>> dn1_b, tn1_b = b.find_neighbors(1, [[3, 1], [8, 3], [21, 8]], theiler_window=None, t_query=None)
+        >>> dn1_b[:,0].tolist()
+        [0.0, 0.0, 0.0]
+        >>> tn1_b[:,0].tolist()
+        [2, 4, 6]
+        >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=0, t_query=[2, 3, 4, 5, 6])
+        >>> tn2_b.tolist()
+        [[3, 4, 5], [2, 4, 5], [3, 5, 2], [4, 6, 3], [5, 4, 3]]
+        >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=1, t_query=[2, 3, 4, 5, 6])
+        >>> tn2_b.tolist()
+        [[4, 5, 6], [5, 6, -1], [2, 6, -1], [3, 2, -1], [4, 3, 2]]
+        >>> dn2_b, tn2_b = b.find_neighbors(3, [[3, 1], [5, 2], [8, 3], [13, 8], [21, 8]], theiler_window=2, t_query=[2, 3, 4, 5, 6])
+        >>> tn2_b.tolist()
+        [[5, 6, -1], [6, -1, -1], [-1, -1, -1], [2, -1, -1], [3, 2, -1]]
         '''
         if not isinstance(query_vectors, numpy.ndarray):
             query_vectors = numpy.array(query_vectors)
@@ -165,8 +194,6 @@ class Embedding:
         # or, if not enough neighbors exist, the maximum available number outside the Theiler window.
         k = neighbor_count
         while len(unfinished_ind) > 0:
-            sys.stderr.write('k = {0}, unfinished_ind = {0}\n'.format(k, unfinished_ind))
-
             # Query points that need more neighbors
             dist_i, ind_i = self.kdtree.query(query_vectors[unfinished_ind,:], k=k)
 
@@ -212,7 +239,7 @@ class Embedding:
             has_missing = (tn_i == -1).sum(axis=1) > 0
 
             # Efficiently assign distances for rows that don't need to be modified
-            not_too_close_no_missing = numpy.logical_not(has_too_close or has_missing)
+            not_too_close_no_missing = numpy.logical_not(numpy.logical_or(has_too_close, has_missing))
             dist[unfinished_ind[not_too_close_no_missing],:] = dist_i[not_too_close_no_missing,:neighbor_count]
 
             # Assign distances one-by-one for rows that have run out of valid neighbors,
@@ -225,7 +252,7 @@ class Embedding:
                 dist_ind = dist_i[ind,:]
                 tn_ind = tn_i[ind,:]
                 valid_ind = tn_ind >= 0
-                n_valid_ind = valid_ind.shape[0]
+                n_valid_ind = valid_ind.sum()
 
                 dist_ind[:n_valid_ind] = dist_ind[valid_ind]
                 tn_ind[:n_valid_ind] = tn_ind[valid_ind]
@@ -238,10 +265,8 @@ class Embedding:
 
             not_ready = numpy.logical_and(
                 has_too_close,
-                numpy.logical_not(has_enough),
-                numpy.logical_not(has_missing)
+                numpy.logical_not(numpy.logical_or(has_enough, has_missing))
             )
-
             assert not_too_close_no_missing.sum() + ready_needs_modification.sum() + not_ready.sum() == len(unfinished_ind)
 
             unfinished_ind = unfinished_ind[not_ready]
