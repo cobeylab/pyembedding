@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import doctest
+import unittest
 import os
 import sys
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -205,6 +207,18 @@ class Embedding:
         True
         >>> numpy.array_equal(tnk_c, tns_c)
         True
+        >>> dnk_c, tnk_c = c.find_neighbors_from_embedding(1, c, theiler_window=0, use_kdtree=True)
+        >>> dns_c, tns_c = c.find_neighbors_from_embedding(1, c, theiler_window=0, use_kdtree=False)
+        >>> numpy.array_equal(dnk_c, dns_c)
+        True
+        >>> numpy.array_equal(tnk_c, tns_c)
+        True
+        >>> dnk_c, tnk_c = c.find_neighbors_from_embedding(1, c, theiler_window=0, use_kdtree=True)
+        >>> dns_c, tns_c = c.find_neighbors_from_embedding(1, c, theiler_window=0, use_kdtree=False)
+        >>> numpy.array_equal(dnk_c, dns_c)
+        True
+        >>> numpy.array_equal(tnk_c, tns_c)
+        True
         '''
         if not isinstance(query_vectors, numpy.ndarray):
             query_vectors = numpy.array(query_vectors)
@@ -338,7 +352,7 @@ class Embedding:
 
     def simplex_predict_from_embedding(self, embedding, y, neighbor_count=None, theiler_window=0, use_kdtree=True):
         return self.simplex_predict(embedding.embedding_mat, y, embedding.t, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree)
-
+    
     def simplex_predict(self, X, y, t, neighbor_count=None, theiler_window=0, use_kdtree=True):
         '''
 
@@ -430,8 +444,33 @@ class Embedding:
 
     delay_vector_count = property(get_delay_vector_count)
 
+class TestEmbedding(unittest.TestCase):
+    def test_find_neighbors_stochastic(self):
+        rng = numpy.random.RandomState(seed=1)
+        x = numpy.random.normal(0, 1, 100)
+        c = Embedding(x, delays=(0,))
+
+        for neighbor_count in range(1, 10):
+            for theiler_window in range(10):
+                dnk_c, tnk_c = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, use_kdtree=True)
+                dns_c, tns_c = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, use_kdtree=False)
+                self.assertTrue(numpy.array_equal(dnk_c, dns_c))
+                self.assertTrue(numpy.array_equal(tnk_c, tns_c))
+
+    def test_simplex_predict_stochastic(self):
+        rng = numpy.random.RandomState(seed=1)
+        x = numpy.random.normal(0, 1, 100)
+        y = numpy.random.normal(0, 1, 100)
+        c = Embedding(x, delays=(0,))
+
+        for neighbor_count in range(1, 10):
+            for theiler_window in range(10):
+                y_pred = c.simplex_predict_from_embedding()
+                dns_c, tns_c = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, use_kdtree=False)
+                self.assertTrue(numpy.array_equal(dnk_c, dns_c))
+                self.assertTrue(numpy.array_equal(tnk_c, tns_c))
+
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
 
-    import doctest
     doctest.testmod(verbose=True)
