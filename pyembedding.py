@@ -5,17 +5,53 @@ import unittest
 import os
 import sys
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
-import random
 import numpy
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
-import subprocess
-import tempfile
-import shutil
-import time
-from collections import OrderedDict
-from numba import jit
 import jsonobject
+
+def find_theiler_window(x):
+    for j in range(x.shape[0]):
+        autocorr = numpy.corrcoef(x[0:(x.shape[0]-j)], x[j:])[0,1]
+        if numpy.abs(autocorr) < 1.0/numpy.e:
+            k = j * 3
+            corr_theiler = numpy.corrcoef(x[0:(x.shape[0]-k)], x[k:])[0,1]
+            return k, corr_theiler
+
+def autocorrelation_threshold_delay(x, ac_thresh):
+    '''
+    >>> try:
+    ...     autocorrelation_threshold_delay([1], 1.0/numpy.e)
+    ...     assert False
+    ... except:
+    ...     pass
+
+    >>> try:
+    ...     autocorrelation_threshold_delay([1, 2], 1.0/numpy.e)
+    ...     assert False
+    ... except:
+    ...     pass
+
+    >>> j, ac = autocorrelation_threshold_delay([1, 2, 3], 1.0/numpy.e)
+    >>> j
+    1
+    >>> ac
+    1.0
+
+    >>> j, ac = autocorrelation_threshold_delay(numpy.random.normal(0, 1, size=1000), 1.0/numpy.e)
+    >>> j
+    1
+    >>> ac < 1.0 / numpy.e
+    True
+    '''
+    if not isinstance(x, numpy.ndarray):
+        x = numpy.array(x)
+
+    assert x.shape[0] > 2
+    for j in range(1, x.shape[0] - 1):
+        ac = numpy.corrcoef(x[0:(x.shape[0]-j)], x[j:])[0,1]
+        if j == x.shape[0] - 2 or numpy.abs(ac) < ac_thresh:
+            return j, ac
 
 class Embedding:
     '''
