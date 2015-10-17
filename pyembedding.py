@@ -114,7 +114,7 @@ class Embedding:
 
         return Embedding(self.x, self.delays, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds])
 
-    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=1, use_kdtree=True):
+    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=1, return_indices=False, use_kdtree=True):
         '''
         :param neighbor_count:
         :param embedding:
@@ -132,9 +132,9 @@ class Embedding:
         [2, 3, 0, 1, 0, 1, 0]
         '''
         assert theiler_window >= 0
-        return self.find_neighbors(neighbor_count, embedding.embedding_mat, theiler_window=theiler_window, t_query=embedding.t, use_kdtree=use_kdtree)
+        return self.find_neighbors(neighbor_count, embedding.embedding_mat, theiler_window=theiler_window, t_query=embedding.t, return_indices=return_indices, use_kdtree=use_kdtree)
 
-    def find_neighbors(self, neighbor_count, query_vectors, theiler_window=0, t_query=None, use_kdtree=True):
+    def find_neighbors(self, neighbor_count, query_vectors, theiler_window=0, t_query=None, return_indices=False, use_kdtree=True):
         '''
 
         :param neighbor_count:
@@ -234,17 +234,18 @@ class Embedding:
         assert t_query is None or t_query.shape[0] == query_vectors.shape[0]
 
         if use_kdtree:
-            return self.find_neighbors_kdtree(neighbor_count, query_vectors, theiler_window=theiler_window, t_query=t_query)
+            return self.find_neighbors_kdtree(neighbor_count, query_vectors, theiler_window=theiler_window, t_query=t_query, return_indices=return_indices)
         else:
-            return self.find_neighbors_stupid(neighbor_count, query_vectors, theiler_window=theiler_window, t_query=t_query)
+            return self.find_neighbors_stupid(neighbor_count, query_vectors, theiler_window=theiler_window, t_query=t_query, return_indices=return_indices)
 
-    def find_neighbors_kdtree(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
+    def find_neighbors_kdtree(self, neighbor_count, query_vectors, theiler_window=0, t_query=None, return_indices=False):
         if self.kdtree is None:
             self.kdtree = cKDTree(self.embedding_mat)
 
         # Start with infinite distances and missing neighbor times (-1)
         dist = numpy.ones((query_vectors.shape[0], neighbor_count), dtype=float) * float('inf')
         tn = -numpy.ones((query_vectors.shape[0], neighbor_count), dtype=int)
+        indn = -numpy.ones((query_vectors.shape[0], neighbor_count), dtype=int)
         unfinished_ind = numpy.arange(query_vectors.shape[0])
 
         # Query kd-tree until every point has neighbor_count neighbors outside the Theiler window,
@@ -264,6 +265,7 @@ class Embedding:
             is_missing = ind_i == self.kdtree.n
             ind_missing = numpy.nonzero(is_missing)
             ind_present = numpy.nonzero(numpy.logical_not(is_missing))
+            ind_i[ind_missing] = -1
 
             tn_i = -numpy.ones((len(unfinished_ind), k), dtype=int)
             tn_i[ind_present] = self.t[ind_i[ind_present]]
@@ -272,6 +274,7 @@ class Embedding:
             if theiler_window == 0:
                 dist = dist_i
                 tn = tn_i
+                indn = ind_i
                 break
 
             # Identify too-close-in-time neighbors; label them -2
@@ -295,6 +298,7 @@ class Embedding:
             not_too_close_no_missing = numpy.logical_not(numpy.logical_or(has_too_close, has_missing))
             dist[unfinished_ind[not_too_close_no_missing],:] = dist_i[not_too_close_no_missing,:neighbor_count]
             tn[unfinished_ind[not_too_close_no_missing],:] = tn_i[not_too_close_no_missing,:neighbor_count]
+            indn[unfinished_ind[not_too_close_no_missing],:] = ind_i[not_too_close_no_missing,:neighbor_count]
 
             # Assign distances one-by-one for rows that have run out of valid neighbors,
             # or that have enough valid neighbors but also some that are too close in time
@@ -305,17 +309,23 @@ class Embedding:
             for ind in numpy.nonzero(ready_needs_modification)[0]:
                 dist_ind = dist_i[ind,:]
                 tn_ind = tn_i[ind,:]
+                indn_ind = ind_i[ind,:]
+
                 valid_ind = tn_ind >= 0
                 n_valid_ind = valid_ind.sum()
 
                 dist_ind[:n_valid_ind] = dist_ind[valid_ind]
                 tn_ind[:n_valid_ind] = tn_ind[valid_ind]
+                indn_ind[:n_valid_ind] = indn_ind[valid_ind]
 
                 dist_ind[n_valid_ind:] = float('inf')
                 tn_ind[n_valid_ind:] = -1
+                indn_ind[n_valid_ind:] = -1
 
                 dist[unfinished_ind[ind],:] = dist_ind[:neighbor_count]
                 tn[unfinished_ind[ind],:] = tn_ind[:neighbor_count]
+                indn[unfinished_ind[ind],:] = indn_ind[:neighbor_count]
+                # sys.stderr.write('{0}\n'.format(indn_ind[:neighbor_count]))
 
             not_ready = numpy.logical_and(
                 has_too_close,
@@ -326,30 +336,78 @@ class Embedding:
             unfinished_ind = unfinished_ind[not_ready]
             k = k + neighbor_count - min_n_valid
 
+        if return_indices:
+            return dist, tn, indn
+        else:
+            return dist, tn
 
-        return dist, tn
-
-    def find_neighbors_stupid(self, neighbor_count, query_vectors, theiler_window=0, t_query=None):
+    def find_neighbors_stupid(self, neighbor_count, query_vectors, theiler_window=0, t_query=None, return_indices=False):
         dmat = cdist(query_vectors, self.embedding_mat)
 
         dn = numpy.ones((query_vectors.shape[0], neighbor_count)) * float('inf')
         tn = -numpy.ones((query_vectors.shape[0], neighbor_count), dtype=int)
+        indn = -numpy.ones((query_vectors.shape[0], neighbor_count), dtype=int)
 
         for i in range(dmat.shape[0]):
             dn_i = []
             tn_i = []
+            indn_i = []
             for j in numpy.argsort(dmat[i,:]):
                 # sys.stderr.write('{0}: dmat[i,j] = {1}, dt = {2}\n'.format(j, dmat[i,j], t_query[i] - self.t[j]))
                 if (theiler_window == 0 and t_query is None) or numpy.abs(t_query[i] - self.t[j]) >= theiler_window:
+                    indn_i.append(j)
                     tn_i.append(self.t[j])
                     dn_i.append(dmat[i,j])
                 if len(tn_i) == neighbor_count:
                     break
             dn[i,:len(dn_i)] = dn_i
             tn[i,:len(tn_i)] = tn_i
+            indn[i,:len(tn_i)] = indn_i
         # sys.stderr.write('dn = {0}'.format(dn))
         # sys.stderr.write('tn = {0}'.format(tn))
-        return dn, tn
+        if return_indices:
+            return dn, tn, indn
+        else:
+            return dn, tn
+
+    def subembedding(self, delay_sub_indices):
+        return Embedding(
+            self.x,
+            [self.delays[i] for i in delay_sub_indices],
+            embedding_mat=self.embedding_mat[:,delay_sub_indices],
+            t=self.t
+        )
+
+    def identify_nichkawde_subembedding(self, theiler_window):
+        # Initial member of embedding is the first column
+        sub_inds = (0,)
+        sub_emb = self.subembedding(sub_inds)
+        while sub_inds[-1] < len(self.delays) - 1:
+            dn, tn, indn = sub_emb.find_neighbors_from_embedding(1, sub_emb, theiler_window=theiler_window, return_indices=True)
+            valid = indn[:,0] >= 0
+
+            max_deriv = 0.0
+            max_deriv_ind = None
+            for next_sub_ind in range(sub_inds[-1] + 1, len(self.delays)):
+                emb_mat_next = self.embedding_mat[valid, next_sub_ind]
+                emb_mat_next_neighbors = emb_mat_next[indn[valid,0]]
+                dist_next = numpy.abs(emb_mat_next - emb_mat_next_neighbors)
+
+                deriv = dist_next / dn[valid,0]
+
+                # Take geometric mean over nonzero distances
+                geo_mean_deriv = numpy.exp(numpy.log(deriv[deriv != 0.0]).mean())
+
+                if geo_mean_deriv > max_deriv:
+                    max_deriv = geo_mean_deriv
+                    max_deriv_ind = next_sub_ind
+
+            if max_deriv_ind is None:
+                raise Exception('Embedding identification failed: could not calculate max derivative.')
+            sub_inds = sub_inds + (max_deriv_ind,)
+            sub_emb = self.subembedding(sub_inds)
+
+        return sub_emb
 
     def ccm(self, query_embedding, y_full, neighbor_count=None, theiler_window=1, use_kdtree=True):
 
@@ -475,6 +533,13 @@ class Embedding:
     delay_vector_count = property(get_delay_vector_count)
 
 class TestEmbedding(unittest.TestCase):
+    def test_nichkawde_stochastic(self):
+        rng = numpy.random.RandomState(seed=256)
+        x = numpy.random.normal(0, 1, 100)
+        e = Embedding(x, delays=(0,1,2,))
+        ne = e.identify_nichkawde_subembedding(5)
+        sys.stderr.write('{0}\n'.format(ne.delays))
+
     def test_find_neighbors_stochastic(self):
         rng = numpy.random.RandomState(seed=1)
         x = numpy.random.normal(0, 1, 100)
@@ -482,23 +547,14 @@ class TestEmbedding(unittest.TestCase):
 
         for neighbor_count in range(1, 10):
             for theiler_window in range(10):
-                dnk_c, tnk_c = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, use_kdtree=True)
-                dns_c, tns_c = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, use_kdtree=False)
+                dnk_c, tnk_c, indnk = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, return_indices=True, use_kdtree=True)
+                dns_c, tns_c, indns = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, return_indices=True, use_kdtree=False)
+
+                # sys.stderr.write('{0}\n'.format(indnk))
+                # sys.stderr.write('{0}\n'.format(indns))
                 self.assertTrue(numpy.array_equal(dnk_c, dns_c))
                 self.assertTrue(numpy.array_equal(tnk_c, tns_c))
-
-    def test_simplex_predict_stochastic(self):
-        rng = numpy.random.RandomState(seed=1)
-        x = numpy.random.normal(0, 1, 100)
-        y = numpy.random.normal(0, 1, 100)
-        c = Embedding(x, delays=(0,))
-
-        for neighbor_count in range(1, 10):
-            for theiler_window in range(10):
-                y, y_pred = c.simplex_predict_from_embedding()
-                dns_c, tns_c = c.find_neighbors_from_embedding(neighbor_count, c, theiler_window=theiler_window, use_kdtree=False)
-                self.assertTrue(numpy.array_equal(dnk_c, dns_c))
-                self.assertTrue(numpy.array_equal(tnk_c, tns_c))
+                self.assertTrue(numpy.array_equal(indnk, indns))
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
