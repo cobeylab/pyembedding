@@ -1,3 +1,4 @@
+import sys
 import json
 import numpy
 import cStringIO
@@ -14,7 +15,7 @@ class JSONObject(object):
     True
     '''
 
-    def __init__(self, name_value_pairs=None):
+    def __init__(self, name_value_pairs=None, **kwargs):
         '''Initialize object from attribute name-value pairs.
 
         :param name_value_pairs: Attribute name-value pairs.
@@ -22,8 +23,21 @@ class JSONObject(object):
         self.odict = OrderedDict()
 
         if name_value_pairs is not None:
+            if isinstance(name_value_pairs, dict):
+                sys.stderr.write('{0}\n'.format(name_value_pairs))
+                name_value_pairs = name_value_pairs.items()
+
             for name, value in name_value_pairs:
                 setattr(self, name, value)
+
+        for k, v in kwargs:
+            setattr(self, k, v)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+    def __getitem__(self, item):
+        return getattr(self, item)
 
     def __setattr__(self, name, value):
         if name == 'odict':
@@ -52,11 +66,12 @@ class JSONObject(object):
         '''
 
         if isinstance(value, list):
-            if len(value) == 0 or isinstance(value[0], bool) or isinstance(value[0], float) or isinstance(value[0], int):
-                try:
-                    value = numpy.array(value)
-                except:
-                    pass
+            try:
+                value = numpy.array(value)
+            except:
+                pass
+        elif isinstance(value, dict):
+            value = JSONObject(value)
 
         self.odict[name] = value
 
@@ -65,7 +80,7 @@ class JSONObject(object):
             return super(JSONObject, self).__getattr__(self, item)
         return self.odict[item]
 
-    def load_from_file(self, f):
+    def update_from_file(self, f):
         '''
 
         :param f:
@@ -73,7 +88,7 @@ class JSONObject(object):
 
         >>> json_obj = JSONObject([('foo', 5), ('bar', 7), ('baz', [1,2,3,4])])
         >>> json_file = cStringIO.StringIO('{"bar" : 8}')
-        >>> json_obj.load_from_file(json_file)
+        >>> json_obj.update_from_file(json_file)
         >>> json_obj.foo
         5
         >>> json_obj.bar
@@ -84,14 +99,14 @@ class JSONObject(object):
         json_obj = load_from_file(f)
         self.odict.update(json_obj.odict)
 
-    def load_from_string(self, s):
+    def update_from_string(self, s):
         '''
 
         :param f:
         :return:
 
         >>> json_obj = JSONObject([('foo', 5), ('bar', 7), ('baz', [1,2,3,4])])
-        >>> json_obj.load_from_string('{"bar" : 8}')
+        >>> json_obj.update_from_string('{"bar" : 8}')
         >>> json_obj.foo
         5
         >>> json_obj.bar
@@ -157,12 +172,12 @@ def load_from_file(f):
 
 def load_from_string(s):
     '''Load JSONObject object from JSON file
-    >>> json_str = '{"foo" : 5, "bar" : 7}'
+    >>> json_str = '{"foo" : 5, "bar" : [7, 8, 9]}'
     >>> json_obj = load_from_string(json_str)
     >>> json_obj.foo
     5
-    >>> json_obj.bar
-    7
+    >>> json_obj.bar.tolist()
+    [7, 8, 9]
     '''
     return json.loads(s, object_pairs_hook=JSONObject)
 
