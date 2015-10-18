@@ -445,11 +445,11 @@ class Embedding:
                 dist_next = numpy.abs(emb_mat_next - emb_mat_next_neighbors)
 
                 deriv = dist_next / dn[valid,0]
-                sys.stderr.write('deriv: {0}\n'.format(deriv))
+                # sys.stderr.write('deriv: {0}\n'.format(deriv))
 
                 # Take geometric mean over nonzero distances
                 geo_mean_deriv = numpy.exp(numpy.log(deriv[deriv != 0.0]).mean())
-                sys.stderr.write('geo_mean_deriv: {0}\n'.format(geo_mean_deriv))
+                # sys.stderr.write('geo_mean_deriv: {0}\n'.format(geo_mean_deriv))
 
                 if geo_mean_deriv > max_deriv:
                     max_deriv = geo_mean_deriv

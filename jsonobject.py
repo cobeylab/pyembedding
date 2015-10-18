@@ -80,6 +80,27 @@ class JSONObject(object):
             return super(JSONObject, self).__getattr__(self, item)
         return self.odict[item]
 
+    def __len__(self):
+        return len(self.odict)
+
+    def keys(self):
+        return self.odict.keys()
+
+    def iterkeys(self):
+        return self.odict.iterkeys()
+
+    def values(self):
+        return self.odict.values()
+
+    def itervalues(self):
+        return self.odict.itervalues()
+
+    def items(self):
+        return self.odict.items()
+
+    def iteritems(self):
+        return self.odict.iteritems()
+
     def update_from_file(self, f_or_s):
         '''
 
@@ -117,7 +138,7 @@ class JSONObject(object):
         json_obj = load_from_string(s)
         self.odict.update(json_obj.odict)
 
-    def dump_to_file(self, f_or_s):
+    def dump_to_file(self, f_or_s, indent=None):
         '''
         :return:
 
@@ -138,12 +159,12 @@ class JSONObject(object):
         else:
             f = f_or_s
             opened_file = False
-        json.dump(self, f, cls=JSONObjectEncoder)
+        json.dump(self, f, cls=JSONObjectEncoder, indent=indent)
         f.write('\n')
         if opened_file:
             f.close()
 
-    def dump_to_string(self):
+    def dump_to_string(self, indent=None):
         '''
         :return:
 
@@ -157,7 +178,7 @@ class JSONObject(object):
         >>> json_obj_check['baz']
         [1, 2, 3, 4]
         '''
-        return json.dumps(self, cls=JSONObjectEncoder)
+        return json.dumps(self, cls=JSONObjectEncoder, indent=indent)
 
 
 class JSONObjectEncoder(json.JSONEncoder):

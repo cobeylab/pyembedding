@@ -13,6 +13,7 @@ class ExecutionException(Exception):
         self.stderr_data = stderr_data
 
 def run_via_pypy(model_name, params):
+    # Prevent PyPy from trying to load CPython .pyc file
     os.remove(os.path.splitext(__file__)[0] + '.pyc')
 
     import subprocess
@@ -230,6 +231,5 @@ def multistrain_sde(
 
 if __name__ == '__main__':
     params = json.load(sys.stdin)
-    sys.stdin.close()
     result = globals()[sys.argv[1]](**params)
     result.dump_to_file(sys.stdout)
