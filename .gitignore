@@ -3,3 +3,12 @@
 *~
 *.pyc
 *.o
+*.png
+*.json
+*.log
+*_old*
+*.status
+costfunc
+*.a
+*.sqlite
+work

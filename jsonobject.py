@@ -24,7 +24,7 @@ class JSONObject(object):
 
         if name_value_pairs is not None:
             if isinstance(name_value_pairs, dict):
-                sys.stderr.write('{0}\n'.format(name_value_pairs))
+                #sys.stderr.write('{0}\n'.format(name_value_pairs))
                 name_value_pairs = name_value_pairs.items()
 
             for name, value in name_value_pairs:
@@ -117,7 +117,7 @@ class JSONObject(object):
         json_obj = load_from_string(s)
         self.odict.update(json_obj.odict)
 
-    def dump_to_file(self, f):
+    def dump_to_file(self, f_or_s):
         '''
         :return:
 
@@ -132,7 +132,16 @@ class JSONObject(object):
         >>> json_obj_check['baz']
         [1, 2, 3, 4]
         '''
-        return json.dump(self, f, cls=JSONObjectEncoder)
+        if isinstance(f_or_s, basestring):
+            f = open(f_or_s, 'w')
+            opened_file = True
+        else:
+            f = f_or_s
+            opened_file = False
+        json.dump(self, f, cls=JSONObjectEncoder)
+        f.write('\n')
+        if opened_file:
+            f.close()
 
     def dump_to_string(self):
         '''
@@ -159,7 +168,7 @@ class JSONObjectEncoder(json.JSONEncoder):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
 
-def load_from_file(f):
+def load_from_file(f_or_s):
     '''Load JSONObject object from JSON file
     >>> json_file = cStringIO.StringIO('{"foo" : 5, "bar" : 7}')
     >>> json_obj = load_from_file(json_file)
@@ -168,7 +177,16 @@ def load_from_file(f):
     >>> json_obj.bar
     7
     '''
-    return json.load(f, object_pairs_hook=JSONObject)
+    if isinstance(f_or_s, basestring):
+        f = open(f_or_s)
+        opened_file = True
+    else:
+        f = f_or_s
+        opened_file = False
+    obj = json.load(f, object_pairs_hook=JSONObject)
+    if opened_file:
+        f.close()
+    return obj
 
 def load_from_string(s):
     '''Load JSONObject object from JSON file

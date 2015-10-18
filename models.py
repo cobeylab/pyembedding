@@ -231,6 +231,5 @@ def multistrain_sde(
 if __name__ == '__main__':
     params = json.load(sys.stdin)
     sys.stdin.close()
-    json.dump(params, sys.stderr)
     result = globals()[sys.argv[1]](**params)
     result.dump_to_file(sys.stdout)

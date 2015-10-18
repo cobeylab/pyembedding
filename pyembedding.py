@@ -49,7 +49,15 @@ def autocorrelation_threshold_delay(x, ac_thresh):
 
     assert x.shape[0] > 2
     for j in range(1, x.shape[0] - 1):
-        ac = numpy.corrcoef(x[0:(x.shape[0]-j)], x[j:])[0,1]
+        x1 = x[0:(x.shape[0]-j)]
+        x2 = x[j:]
+
+        if numpy.std(x1) == 0.0 and numpy.std(x2) == 0.0:
+            return j, 1.0
+        elif numpy.std(x1) == 0.0 or numpy.std(x2) == 0.0:
+            return j, 0.0
+
+        ac = numpy.corrcoef(x1, x2)[0, 1]
         if j == x.shape[0] - 2 or numpy.abs(ac) < ac_thresh:
             return j, ac
 
@@ -121,24 +129,24 @@ class Embedding:
         self.embedding_mat = numpy.array(embedding_list)
         assert self.embedding_mat.shape[1] == len(self.delays)
 
-    def sampled_embedding(self, n, replace=True, rng=numpy.random):
+    def sample_embedding(self, n, replace=True, rng=numpy.random):
         '''
         >>> a = Embedding([1, 2, 3, 4], delays=(0, 1))
-        >>> b = a.sampled_embedding(2, replace=False)
+        >>> b = a.sample_embedding(2, replace=False)
         >>> b.delay_vector_count
         2
-        >>> c = a.sampled_embedding(2, replace=True)
+        >>> c = a.sample_embedding(2, replace=True)
         >>> c.delay_vector_count
         2
-        >>> d = a.sampled_embedding(3, replace=True)
+        >>> d = a.sample_embedding(3, replace=True)
         >>> d.delay_vector_count
         3
         >>> try:
-        ...     e = a.sampled_embedding(3, replace=False)
+        ...     e = a.sample_embedding(3, replace=False)
         ...     assert False
         ... except AssertionError:
         ...     pass
-        >>> f = a.sampled_embedding(4, replace=True)
+        >>> f = a.sample_embedding(4, replace=True)
         >>> f.delay_vector_count
         4
         '''
@@ -420,19 +428,28 @@ class Embedding:
         sub_emb = self.subembedding(sub_inds)
         while sub_inds[-1] < len(self.delays) - 1:
             dn, tn, indn = sub_emb.find_neighbors_from_embedding(1, sub_emb, theiler_window=theiler_window, return_indices=True)
-            valid = indn[:,0] >= 0
+            valid = numpy.logical_and(
+                indn[:, 0] >= 0,
+                numpy.logical_and(
+                    numpy.logical_not(numpy.isinf(dn[:, 0])),
+                    dn[:, 0] > 0.0
+                )
+            )
 
             max_deriv = 0.0
             max_deriv_ind = None
             for next_sub_ind in range(sub_inds[-1] + 1, len(self.delays)):
-                emb_mat_next = self.embedding_mat[valid, next_sub_ind]
-                emb_mat_next_neighbors = emb_mat_next[indn[valid,0]]
+                emb_mat_next = self.embedding_mat[:, next_sub_ind]
+                emb_mat_next_neighbors = emb_mat_next[indn[valid, 0]]
+                emb_mat_next = emb_mat_next[valid]
                 dist_next = numpy.abs(emb_mat_next - emb_mat_next_neighbors)
 
                 deriv = dist_next / dn[valid,0]
+                sys.stderr.write('deriv: {0}\n'.format(deriv))
 
                 # Take geometric mean over nonzero distances
                 geo_mean_deriv = numpy.exp(numpy.log(deriv[deriv != 0.0]).mean())
+                sys.stderr.write('geo_mean_deriv: {0}\n'.format(geo_mean_deriv))
 
                 if geo_mean_deriv > max_deriv:
                     max_deriv = geo_mean_deriv
