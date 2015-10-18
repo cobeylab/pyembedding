@@ -14,7 +14,9 @@ class ExecutionException(Exception):
 
 def run_via_pypy(model_name, params):
     # Prevent PyPy from trying to load CPython .pyc file
-    os.remove(os.path.splitext(__file__)[0] + '.pyc')
+    pyc_filename = os.path.splitext(__file__)[0] + '.pyc'
+    if os.path.exists(pyc_filename):
+        os.remove(pyc_filename)
 
     import subprocess
     proc = subprocess.Popen(

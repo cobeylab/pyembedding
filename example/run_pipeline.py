@@ -6,20 +6,22 @@ Can be used by itself
 import os
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 import sys
-# Uncomment and modify this to point to the right location for pyembedding
-# sys.path.append(os.path.join(SCRIPT_DIR, 'pyembedding'))
 import sqlite3
 import numpy
-import pyembedding
-import uzalcost
-import jsonobject
-import models
-import statutils
 import matplotlib
 import random
 matplotlib.use('Agg')
 from matplotlib import pyplot
 
+# Needs to point to the right place for pyembedding
+sys.path.append(os.path.join(SCRIPT_DIR, 'pyembedding'))
+import pyembedding
+import uzalcost
+import jsonobject
+import models
+import statutils
+
+# Various parameters
 save_correlations = True
 n_ccm_bootstraps = 1000
 
@@ -199,7 +201,7 @@ def run_ccm_bootstraps(cname, ename, embedding, cause, L, theiler_window):
     corrs = []
 
     for i in range(n_ccm_bootstraps):
-        sampled_embedding = embedding.sample_embedding(L, replace=True)
+        sampled_embedding = embedding.sample_embedding(L, replace=True, rng=rng)
         ccm_result, y_actual, y_pred = sampled_embedding.ccm(embedding, cause, theiler_window=theiler_window)
 
         corrs.append(ccm_result.correlation)

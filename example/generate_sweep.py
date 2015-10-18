@@ -3,7 +3,10 @@
 import os
 import sys
 import numpy
+import random
 from jsonobject import JSONObject
+
+seed_rng = random.SystemRandom()
 
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -15,7 +18,7 @@ job_id = 0
 for beta0 in beta0_vals:
     for sd_proc in sd_proc_vals:
         for replicate_id in xrange(n_replicates):
-            sys.stderr.write('job_id {0}: beta0 = {1}, sd_proc = {2}, ic {3}\n'.format(job_id, beta0, sd_proc, i))
+            sys.stderr.write('job_id {0}: beta0 = {1}, sd_proc = {2}, rep {3}\n'.format(job_id, beta0, sd_proc, replicate_id))
             
             job_dir = os.path.join(SCRIPT_DIR, 'jobs', '{0}'.format(job_id))
             os.makedirs(job_dir)
@@ -26,7 +29,8 @@ for beta0 in beta0_vals:
                 ('job_id', job_id),
                 ('beta0', beta0),
                 ('sd_proc', sd_proc),
-                ('replicate_id', replicate_id)
+                ('replicate_id', replicate_id),
+                ('random_seed', seed_rng.randint(1, 2**31-1))
             ]).dump_to_file(os.path.join(job_dir, 'job_info.json'))
             
             # Write simulation parameters to JSON file
