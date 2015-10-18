@@ -30,7 +30,7 @@ class JSONObject(object):
             for name, value in name_value_pairs:
                 setattr(self, name, value)
 
-        for k, v in kwargs:
+        for k, v in kwargs.iteritems():
             setattr(self, k, v)
 
     def __setitem__(self, key, value):
@@ -80,7 +80,7 @@ class JSONObject(object):
             return super(JSONObject, self).__getattr__(self, item)
         return self.odict[item]
 
-    def update_from_file(self, f):
+    def update_from_file(self, f_or_s):
         '''
 
         :param f:
@@ -96,7 +96,7 @@ class JSONObject(object):
         >>> json_obj.baz.tolist()
         [1, 2, 3, 4]
         '''
-        json_obj = load_from_file(f)
+        json_obj = load_from_file(f_or_s)
         self.odict.update(json_obj.odict)
 
     def update_from_string(self, s):
