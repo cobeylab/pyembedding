@@ -14,11 +14,13 @@ import pyembedding
 import uzalcost
 import jsonobject
 import models
+import statutils
 import matplotlib
 import random
 matplotlib.use('Agg')
 from matplotlib import pyplot
 
+save_correlations = True
 n_ccm_bootstraps = 1000
 
 # Connect to output database
@@ -180,14 +182,18 @@ def run_analysis(cname, cause, ename, effect):
 
     assert Lmax > Lmin
 
-    corrs_Lmin = run_ccm_bootstraps(sub_embedding, cause, Lmin, theiler_window)
-    corrs_Lmax = run_ccm_bootstraps(sub_embedding, cause, Lmax, theiler_window)
+    corrs_Lmin = run_ccm_bootstraps(cname, ename, sub_embedding, cause, Lmin, theiler_window)
+    corrs_Lmax = run_ccm_bootstraps(cname, ename, sub_embedding, cause, Lmax, theiler_window)
 
-    # effect_sampled_embedding = effect_embedding.sampled_embedding(100, replace=True)
-    # ccm_result, y_actual, y_pred = effect_sampled_embedding.ccm(effect_embedding, cause, theiler_window=theiler_window)
-    # print ccm_result.dump_to_string()
+    db.execute(
+        'CREATE TABLE IF NOT EXISTS ccm_increase (job_id, cause, effect, Lmin, Lmax, delays, pvalue_increase)'
+    )
+    db.execute(
+        'INSERT INTO ccm_increase VALUES (?,?,?,?,?,?,?)',
+        [job_info.job_id, cname, ename, Lmin, Lmax, str(sub_embedding.delays), 1.0 - numpy.mean(statutils.inverse_quantile(corrs_Lmin, corrs_Lmax))]
+    )
 
-def run_ccm_bootstraps(embedding, cause, L, theiler_window):
+def run_ccm_bootstraps(cname, ename, embedding, cause, L, theiler_window):
     assert isinstance(embedding, pyembedding.Embedding)
 
     corrs = []
@@ -197,6 +203,23 @@ def run_ccm_bootstraps(embedding, cause, L, theiler_window):
         ccm_result, y_actual, y_pred = sampled_embedding.ccm(embedding, cause, theiler_window=theiler_window)
 
         corrs.append(ccm_result.correlation)
+
+    corrs = numpy.array(corrs)
+
+    db.execute('CREATE TABLE IF NOT EXISTS ccm_correlation_dist (job_id, cause, effect, L, delays, mean, sd, pvalue_positive, q0, q1, q2_5, q5, q25, q50, q75, q95, q97_5, q99, q100)')
+    db.execute(
+        'INSERT INTO ccm_correlation_dist VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [job_info.job_id, cname, ename, L, str(embedding.delays), corrs.mean(), corrs.std(), statutils.inverse_quantile(corrs, 0.0).tolist()] +
+            numpy.percentile(corrs, [0, 1, 2.5, 5, 25, 50, 75, 95, 97.5, 99, 100]).tolist()
+    )
+
+    if save_correlations:
+        db.execute('CREATE TABLE IF NOT EXISTS ccm_correlations (job_id, cause, effect, L, delays, correlation)')
+        for corr in corrs:
+            db.execute(
+                'INSERT INTO ccm_correlations VALUES (?,?,?,?,?,?)',
+                [job_info.job_id, cname, ename, L, str(embedding.delays), corr]
+        )
 
     return numpy.array(corrs)
 
