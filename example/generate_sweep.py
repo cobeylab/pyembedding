@@ -12,7 +12,7 @@ SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 
 beta0_vals = numpy.linspace(0.22, 0.25, num=2, endpoint=False).tolist()
 sd_proc_vals = numpy.linspace(0.005, 0.01, num=2, endpoint=False).tolist()
-n_replicates = 2
+n_replicates = 50
 
 job_id = 0
 for beta0 in beta0_vals:
@@ -38,11 +38,5 @@ for beta0 in beta0_vals:
                 ('beta0', [beta0, beta0]),
                 ('sd_proc', [sd_proc, sd_proc])
             ]).dump_to_file(os.path.join(job_dir, 'sir_params.json'))
-            
-            # Write status 
-            JSONObject([
-                ('job_id', job_id),
-                ('status', 'waiting'),
-            ]).dump_to_file(os.path.join(job_dir, 'status.json'))
             
             job_id += 1

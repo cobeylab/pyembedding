@@ -44,12 +44,6 @@ db.execute('INSERT INTO job_info VALUES ({0})'.format(', '.join(['?'] * len(job_
 # Set up RNG
 rng = numpy.random.RandomState(job_info.random_seed)
 
-# Record status: running
-jsonobject.JSONObject([
-    ('job_id', job_info.job_id),
-    ('status', 'running')
-]).dump_to_file('status.json')
-
 # Initialize SIR model parameters: first defaults,
 # then load overrides from JSON file if present
 params = jsonobject.JSONObject(
@@ -109,12 +103,6 @@ def main():
 
     db.commit()
     db.close()
-
-    # Record status: complete
-    jsonobject.JSONObject([
-        ('job_id', job_info.job_id),
-        ('status', 'complete')
-    ]).dump_to_file('status.json')
 
 def run_simulation():
     try:

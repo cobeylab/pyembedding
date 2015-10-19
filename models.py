@@ -2,9 +2,9 @@ import os
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 import sys
 import json
-import jsonobject
 import random
 from math import sin, pi, log, exp, sqrt, floor, ceil, log1p, isnan
+from collections import OrderedDict
 
 class ExecutionException(Exception):
     def __init__(self, cause, stdout_data, stderr_data):
@@ -13,14 +13,10 @@ class ExecutionException(Exception):
         self.stderr_data = stderr_data
 
 def run_via_pypy(model_name, params):
-    # Prevent PyPy from trying to load CPython .pyc file
-    pyc_filename = os.path.splitext(__file__)[0] + '.pyc'
-    if os.path.exists(pyc_filename):
-        os.remove(pyc_filename)
-
+    import jsonobject
     import subprocess
     proc = subprocess.Popen(
-        ['/usr/bin/env', 'pypy', '-B', os.path.abspath(__file__), model_name],
+        ['/usr/bin/env', 'pypy', os.path.join(SCRIPT_DIR, 'models_pypy.py'), model_name],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -220,7 +216,7 @@ def multistrain_sde(
             obs_errs = [0.0 for i in pathogen_ids]
         Cs.append([max(0.0, CCs[-1][i] - CCs[-2][i] + obs_errs[i]) for i in pathogen_ids])
 
-    result = jsonobject.JSONObject([
+    result = OrderedDict([
         ('t', ts),
         ('logS', logSs),
         ('logI', logIs),
@@ -232,6 +228,12 @@ def multistrain_sde(
     return result
 
 if __name__ == '__main__':
-    params = json.load(sys.stdin)
+    stdin_data = sys.stdin.read()
+    sys.stderr.write(stdin_data)
+    params = json.loads(stdin_data)
     result = globals()[sys.argv[1]](**params)
-    result.dump_to_file(sys.stdout)
+    sys.stderr.write('{0}'.format(result))
+    json.dump(result, sys.stdout)
+
+
+
