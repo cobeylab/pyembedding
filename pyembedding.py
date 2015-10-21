@@ -602,12 +602,14 @@ def arg_max_local_max(x):
     x[numpy.logical_not(bigger_than_neighbors)] = float('-inf')
     return numpy.argmax(x)
 
-def nichkawde_embedding(x, theiler_window, max_delay, max_embedding_dimension, fnn_rtol=10, fnn_threshold=0.01):
+def nichkawde_embedding(x, theiler_window, max_embedding_dimension, fnn_rtol=10, fnn_threshold=0.01, return_metrics=False):
     if not isinstance(x, numpy.ndarray):
         x = numpy.array(x)
     assert len(x.shape) == 1
 
     delays = (0,)
+    derivs_list = []
+    fnn_rates_list = []
     while len(delays) < max_embedding_dimension:
         emb = Embedding(x, delays)
         sys.stderr.write('Embedding size = {0}\n'.format(emb.embedding_mat.shape[0]))
@@ -629,11 +631,11 @@ def nichkawde_embedding(x, theiler_window, max_delay, max_embedding_dimension, f
                 dn[:, 0] > 0.0
             )
         )
-        valid_t[numpy.logical_not(emb.t[valid_inds])] = False
+        valid_t[emb.t[numpy.logical_not(valid_inds)]] = False
 
-        derivs = numpy.zeros(max_delay + 1, dtype=float)
-        fnn_rates = numpy.zeros(max_delay + 1, dtype=float)
-        for delay in range(max_delay+1):
+        derivs = numpy.zeros(max_embedding_dimension, dtype=float)
+        fnn_rates = numpy.zeros(max_embedding_dimension, dtype=float)
+        for delay in range(max_embedding_dimension):
             sys.stderr.write('Trying {0}\n'.format(delay))
             if delay in delays:
                 derivs[delay] = 0.0
@@ -658,13 +660,17 @@ def nichkawde_embedding(x, theiler_window, max_delay, max_embedding_dimension, f
 
                 derivs[delay] = geo_mean_deriv
 
-        best_delay = arg_max_local_max(derivs)
-        print fnn_rates
+        derivs_list.append(derivs)
+        fnn_rates_list.append(fnn_rates)
+        best_delay = numpy.argmax(derivs)
+        print best_delay
         if fnn_rates[best_delay] < fnn_threshold:
             break
         else:
             delays = delays + (best_delay,)
 
+    if return_metrics:
+        return Embedding(x, delays), tuple(derivs_list), tuple(fnn_rates_list)
     return Embedding(x, delays)
 
 if __name__ == '__main__':

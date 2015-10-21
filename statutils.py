@@ -28,24 +28,33 @@ def inverse_quantile(x, y):
     >>> inverse_quantile([1, 2, 3], [[0.5, 1.0], [1.5, 2.5]]).tolist()
     [[0.0, 0.0], [0.25, 0.75]]
     '''
-    if not isinstance(x, numpy.ndarray):
-        x = numpy.array(x)
+    x = numpy.sort(x)
     if not isinstance(y, numpy.ndarray):
         y = numpy.array(y)
-    x.sort()
 
+    print y
     assert len(x.shape) == 1
 
     if x[0] == x[-1]:
         inv_q_y = numpy.ones_like(y) * float('nan')
-        inv_q_y[y == x[0]] = 0.5
+        if len(y.shape) == 0:
+            if inv_q_y == x[0]:
+                inv_q_y = 0.5
+        else:
+            inv_q_y[y == x[0]] = 0.5
     else:
         quantiles = numpy.linspace(0.0, 1.0, num=len(x), endpoint=True)
         interp_func = interp1d(x, quantiles, bounds_error=False)
         inv_q_y = interp_func(y)
-    inv_q_y[y < x[0]] = 0.0
-    inv_q_y[y > x[-1]] = 1.0
+    if len(y.shape) == 0:
+        if y < x[0]:
+            inv_q_y = 0.0
+        elif y > x[-1]:
+            inv_q_y = 1.0
+    else:
+        inv_q_y[y < x[0]] = 0.0
+        inv_q_y[y > x[-1]] = 1.0
     assert numpy.all(numpy.logical_not(numpy.isnan(y)))
 
-    return inv_q_y
+    return numpy.array(inv_q_y)
 
