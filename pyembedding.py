@@ -10,13 +10,13 @@ from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 import jsonobject
 
-def find_theiler_window(x):
-    for j in range(x.shape[0]):
-        autocorr = numpy.corrcoef(x[0:(x.shape[0]-j)], x[j:])[0,1]
-        if numpy.abs(autocorr) < 1.0/numpy.e:
-            k = j * 3
-            corr_theiler = numpy.corrcoef(x[0:(x.shape[0]-k)], x[k:])[0,1]
-            return k, corr_theiler
+# def find_theiler_window(x):
+#     for j in range(x.shape[0]):
+#         autocorr = numpy.corrcoef(x[0:(x.shape[0]-j)], x[j:])[0,1]
+#         if numpy.abs(autocorr) < 1.0/numpy.e:
+#             k = j * 3
+#             corr_theiler = numpy.corrcoef(x[0:(x.shape[0]-k)], x[k:])[0,1]
+#             return k, corr_theiler
 
 def autocorrelation_threshold_delay(x, ac_thresh):
     '''
@@ -158,7 +158,7 @@ class Embedding:
 
         return Embedding(self.x, self.delays, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds])
 
-    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=1, return_indices=False, use_kdtree=True):
+    def find_neighbors_from_embedding(self, neighbor_count, embedding, theiler_window=0, return_indices=False, use_kdtree=True):
         '''
         :param neighbor_count:
         :param embedding:
@@ -422,46 +422,6 @@ class Embedding:
             t=self.t
         )
 
-    def identify_nichkawde_subembedding(self, theiler_window):
-        # Initial member of embedding is the first column
-        sub_inds = (0,)
-        sub_emb = self.subembedding(sub_inds)
-        while sub_inds[-1] < len(self.delays) - 1:
-            dn, tn, indn = sub_emb.find_neighbors_from_embedding(1, sub_emb, theiler_window=theiler_window, return_indices=True)
-            valid = numpy.logical_and(
-                indn[:, 0] >= 0,
-                numpy.logical_and(
-                    numpy.logical_not(numpy.isinf(dn[:, 0])),
-                    dn[:, 0] > 0.0
-                )
-            )
-
-            max_deriv = 0.0
-            max_deriv_ind = None
-            for next_sub_ind in range(sub_inds[-1] + 1, len(self.delays)):
-                emb_mat_next = self.embedding_mat[:, next_sub_ind]
-                emb_mat_next_neighbors = emb_mat_next[indn[valid, 0]]
-                emb_mat_next = emb_mat_next[valid]
-                dist_next = numpy.abs(emb_mat_next - emb_mat_next_neighbors)
-
-                deriv = dist_next / dn[valid,0]
-                # sys.stderr.write('deriv: {0}\n'.format(deriv))
-
-                # Take geometric mean over nonzero distances
-                geo_mean_deriv = numpy.exp(numpy.log(deriv[deriv != 0.0]).mean())
-                # sys.stderr.write('geo_mean_deriv: {0}\n'.format(geo_mean_deriv))
-
-                if geo_mean_deriv > max_deriv:
-                    max_deriv = geo_mean_deriv
-                    max_deriv_ind = next_sub_ind
-
-            if max_deriv_ind is None:
-                raise Exception('Embedding identification failed: could not calculate max derivative.')
-            sub_inds = sub_inds + (max_deriv_ind,)
-            sub_emb = self.subembedding(sub_inds)
-
-        return sub_emb
-
     def ccm(self, query_embedding, y_full, neighbor_count=None, theiler_window=1, use_kdtree=True):
 
         y_actual, y_pred = self.simplex_predict_using_embedding(
@@ -590,7 +550,9 @@ class TestEmbedding(unittest.TestCase):
         rng = numpy.random.RandomState(seed=256)
         x = numpy.random.normal(0, 1, 100)
         e = Embedding(x, delays=(0,1,2,))
-        ne = e.identify_nichkawde_subembedding(5)
+        ne = e.nichkawde_subembedding(5)
+        check_subemb = Embedding(x, delays=ne.delays)
+        self.assertTrue(numpy.array_equal(ne.embedding_mat, check_subemb.embedding_mat))
         sys.stderr.write('{0}\n'.format(ne.delays))
 
     def test_find_neighbors_stochastic(self):
@@ -608,6 +570,102 @@ class TestEmbedding(unittest.TestCase):
                 self.assertTrue(numpy.array_equal(dnk_c, dns_c))
                 self.assertTrue(numpy.array_equal(tnk_c, tns_c))
                 self.assertTrue(numpy.array_equal(indnk, indns))
+
+def arg_max_local_max(x):
+    '''
+
+    :param x:
+    :return:
+
+    >>> arg_max_local_max([1])
+    >>> arg_max_local_max([1, 2])
+    >>> arg_max_local_max([1, 2, 2])
+    >>> arg_max_local_max([1, 2, 1])
+    1
+    >>> arg_max_local_max([1, 2, 1, 3, 1])
+    3
+    '''
+    x = numpy.array(x, dtype=float)
+    assert len(x.shape) == 1
+
+    if x.shape[0] < 3:
+        return None
+
+    bigger_than_neighbors = numpy.zeros(x.shape, dtype=bool)
+    bigger_than_neighbors[1:-1] = numpy.logical_and(
+        x[1:-1] > x[:-2],
+        x[1:-1] > x[2:]
+    )
+    if bigger_than_neighbors.sum() == 0:
+        return None
+
+    x[numpy.logical_not(bigger_than_neighbors)] = float('-inf')
+    return numpy.argmax(x)
+
+def nichkawde_embedding(x, theiler_window, max_delay, max_embedding_dimension, fnn_rtol=10, fnn_threshold=0.01):
+    if not isinstance(x, numpy.ndarray):
+        x = numpy.array(x)
+    assert len(x.shape) == 1
+
+    delays = (0,)
+    while len(delays) < max_embedding_dimension:
+        emb = Embedding(x, delays)
+        sys.stderr.write('Embedding size = {0}\n'.format(emb.embedding_mat.shape[0]))
+
+        t_all = numpy.arange(x.shape[0])
+        valid_t = numpy.ones(x.shape[0], dtype=bool)
+        valid_t[:max(delays)] = False
+
+        dn, tn = emb.find_neighbors_from_embedding(1, emb, theiler_window=theiler_window)
+        dn_all = numpy.ones(x.shape[0]) * float('inf')
+        dn_all[emb.t] = dn[:,0]
+        tn_all = -numpy.ones(x.shape[0], dtype=int)
+        tn_all[emb.t] = tn[:,0]
+
+        valid_inds = numpy.logical_and(
+            tn[:, 0] >= 0,
+            numpy.logical_and(
+                numpy.logical_not(numpy.isinf(dn[:, 0])),
+                dn[:, 0] > 0.0
+            )
+        )
+        valid_t[numpy.logical_not(emb.t[valid_inds])] = False
+
+        derivs = numpy.zeros(max_delay + 1, dtype=float)
+        fnn_rates = numpy.zeros(max_delay + 1, dtype=float)
+        for delay in range(max_delay+1):
+            sys.stderr.write('Trying {0}\n'.format(delay))
+            if delay in delays:
+                derivs[delay] = 0.0
+            else:
+                valid_t_delay = valid_t.copy()
+                valid_t_delay[:delay] = False
+                valid_t_delay[tn_all < delay] = False
+
+                lagged_next = x[t_all[valid_t_delay] - delay]
+                lagged_next_neighbors = x[tn_all[valid_t_delay] - delay]
+                dist_next = numpy.abs(lagged_next - lagged_next_neighbors)
+
+                deriv = dist_next / dn_all[valid_t_delay]
+                deriv = deriv[deriv != 0.0]
+                sys.stderr.write('deriv.shape: {0}\n'.format(deriv.shape))
+
+                fnn_rates[delay] = float((deriv > fnn_rtol).sum()) / deriv.shape[0]
+
+                # Take geometric mean over nonzero distances
+                geo_mean_deriv = numpy.exp(numpy.log(deriv).mean())
+                sys.stderr.write('geo_mean_deriv: {0}\n'.format(geo_mean_deriv))
+
+                derivs[delay] = geo_mean_deriv
+
+        best_delay = arg_max_local_max(derivs)
+        print fnn_rates
+        if fnn_rates[best_delay] < fnn_threshold:
+            break
+        else:
+            delays = delays + (best_delay,)
+
+    return Embedding(x, delays)
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))

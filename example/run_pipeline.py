@@ -158,7 +158,7 @@ def run_analysis(cname, cause, ename, effect):
 
     # Run Nichkawde algorithm to identify sub-embedding
     full_embedding = pyembedding.Embedding(effect, range(embedding_dimension))
-    sub_embedding = full_embedding.identify_nichkawde_subembedding(theiler_window)
+    sub_embedding = full_embedding.nichkawde_subembedding(theiler_window)
     sys.stderr.write('  Nichkawde sub-embedding: {0}\n'.format(sub_embedding.delays))
 
     # min library size: embedding_dimension + 2,

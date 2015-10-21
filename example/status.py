@@ -11,7 +11,8 @@ import jsonobject
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-l', '-L', '--list', action='store_true', help='List status for all jobs')
+parser.add_argument('-l', '-L', '--list', action='store_true', help='List status')
+parser.add_argument('-s', '-S', '--status', help='Only include this status in job list')
 args = parser.parse_args()
 
 jobs_dir = os.path.join(SCRIPT_DIR, 'jobs')
@@ -44,7 +45,8 @@ for job_id in sorted(job_ids):
                 ('job_id', job_id),
                 ('status', status)
             ])
-        status_obj.dump_to_file(sys.stdout)
+        if args.status is None or args.status == status_obj.status:
+            status_obj.dump_to_file(sys.stdout)
     counts[status] += 1
 
 json.dump(counts, sys.stdout, indent=2)
