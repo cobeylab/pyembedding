@@ -27,6 +27,12 @@ LOG_TRANSFORM = False               # If True, takes the natural log of samples.
 FIRST_DIFFERENCE = False            # If True, first-differences time series.
                                     # This is applied after ADD_SAMPLES and LOG_TRANSFORM.
 
+STANDARDIZE = False                 # If True, each time series is standardized to mean=0, sd=1.
+                                    # This is applied after all other transformations.
+
+TS_X_AXIS = 'time (years)'
+TS_Y_AXIS = 'annual cases'
+
 EMBEDDING_ALGORITHM = 'uzal_nichkawde'
 
 N_CCM_BOOTSTRAPS = 1000
@@ -83,8 +89,13 @@ def main():
     x0 = X[:,0]
     x1 = X[:,1]
     
-    run_analysis(VARIABLE_NAME + '0', x0, VARIABLE_NAME + '1', x1)
-    run_analysis(VARIABLE_NAME + '1', x1, VARIABLE_NAME + '0', x0)
+    x0name = VARIABLE_NAME + '0'
+    x1name = VARIABLE_NAME + '1'
+    
+    plot_timeseries([x0, x1], [x0name, x1name], TS_X_AXIS, TS_Y_AXIS, 'timeseries.png')
+    
+    run_analysis(x0name, x0, x1name, x1)
+    run_analysis(x1name, x1, x0name, x0)
 
     db.commit()
     db.close()
@@ -116,6 +127,13 @@ def load_simulation():
     
     if FIRST_DIFFERENCE:
         arr_mod = arr_mod[1:, :] - arr_mod[:-1, :]
+    
+    if STANDARDIZE:
+        for i in range(arr_mod.shape[1]):
+            arr_mod[:,i] -= numpy.mean(arr_mod[:,i])
+            arr_mod[:,i] /= numpy.std(arr_mod[:,i])
+    
+    if FIRST_DIFFERENCE:
         assert arr_mod.shape[0] == CCM_YEARS * CCM_SAMPLES_PER_YEAR - 1
     else:
         assert arr_mod.shape[0] == CCM_YEARS * CCM_SAMPLES_PER_YEAR
@@ -195,6 +213,16 @@ def run_analysis(cname, cause, ename, effect):
         [cname, ename, Lmin, Lmax, str(embedding.delays), 1.0 - numpy.mean(statutils.inverse_quantile(corrs_Lmin, corrs_Lmax))]
     )
     db.commit()
+
+def plot_timeseries(series, labels, xlabel, ylabel, filename):
+    fig = pyplot.figure(figsize=(12,5))
+    for x in series:
+        pyplot.plot(x)
+    pyplot.legend(labels)
+    pyplot.xlabel(xlabel)
+    pyplot.ylabel(ylabel)
+    pyplot.savefig(filename)
+    pyplot.close(fig)
 
 def write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates_tup):
     fig = pyplot.figure(figsize=(10, 5*len(derivs_tup)))
