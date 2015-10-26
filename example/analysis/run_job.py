@@ -8,6 +8,9 @@ SIMULATION_SAMPLES_PER_YEAR = 36    # This is an assumption about the time serie
                                     # unless a new simulation DB is being used with different settings.
                                     # 36 implies 10-day samples in a 360-day year in the original simulations.
 
+TS_X_AXIS = 'time (years)'          # Labels for time-series plot. Rewrite to match settings
+TS_Y_AXIS = 'monthly cases'         # below.
+
 CCM_YEARS = 100                     # Number of years to use at end of time series
 
 CCM_SAMPLES_PER_YEAR = 12           # E.g., 12 implies 30-day samples in a 360-day year.
@@ -30,10 +33,9 @@ FIRST_DIFFERENCE = False            # If True, first-differences time series.
 STANDARDIZE = False                 # If True, each time series is standardized to mean=0, sd=1.
                                     # This is applied after all other transformations.
 
-TS_X_AXIS = 'time (years)'
-TS_Y_AXIS = 'annual cases'
-
-EMBEDDING_ALGORITHM = 'uzal_nichkawde'
+EMBEDDING_ALGORITHM = 'uzal_nichkawde'   # Runs Uzal cost function to find upper bound on Nichkawde embedding lags
+UZAL_FACTOR = 1.5                   # Multiplies Uzal upper bound by this much
+OVERRIDE_UZAL_UPPER_BOUND = None    # If not None, skip Uzal algorithm and use this Nichkawde bound instead
 
 N_CCM_BOOTSTRAPS = 1000
 
@@ -175,14 +177,17 @@ def run_analysis(cname, cause, ename, effect):
         sys.stderr.write('  max_window = {0}\n'.format(max_window))
 
         # Run Uzal cost function (will implicitly compile Uzal's C code if necessary)
-        ms, Lks, params = uzalcost.run_uzal_costfunc(
-            effect, theiler_window=theiler_window, max_prediction_horizon=prediction_horizon,
-            max_window=max_window
-        )
-        best_m_index = numpy.argmin(Lks)
-        max_embedding_dimension = ms[best_m_index]
-        Lk = Lks[best_m_index]
-        sys.stderr.write('  Uzal full embedding dimension = {0} (Lk = {1})\n'.format(max_embedding_dimension, Lk))
+        if OVERRIDE_UZAL_UPPER_BOUND is not None:
+            max_embedding_dimension = OVERRIDE_UZAL_UPPER_BOUND
+        else:
+            ms, Lks, params = uzalcost.run_uzal_costfunc(
+                effect, theiler_window=theiler_window, max_prediction_horizon=prediction_horizon,
+                max_window=max_window
+            )
+            best_m_index = numpy.argmin(Lks)
+            sys.stderr.write('  Uzal full embedding dimension = {0} (Lk = {1})\n'.format(ms[best_m_index], Lks[best_m_index]))
+            max_embedding_dimension = int(numpy.round(UZAL_FACTOR * ms[best_m_index]))
+        sys.stderr.write('  Using max embedding dimension = {}\n'.format(max_embedding_dimension))
 
     # Run Nichkawde algorithm to identify sub-embedding
     embedding, derivs_tup, fnn_rates_tup = pyembedding.nichkawde_embedding(effect, theiler_window, max_embedding_dimension, return_metrics=True)
