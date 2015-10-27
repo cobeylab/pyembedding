@@ -65,9 +65,11 @@ EMBEDDING_ALGORITHM = 'uniform_sweep'       # Runs all valid E/tau combinations:
                                           # does full analysis at chosen E/tau
 #EMBEDDING_ALGORITHM = 'max_univariate_prediction'  # Searches univariate prediction at for all E/tau combinations, and then
                                             # does full analysis at chosen E/tau
-SWEEP_EMBEDDING_DIMENSIONS = range(1, 11)
+#SWEEP_EMBEDDING_DIMENSIONS = range(1, 11)
+SWEEP_EMBEDDING_DIMENSIONS = range(8, 11)
 #SWEEP_DELAYS = [1, 2, 3, 6, 11, 12]
-SWEEP_DELAYS = [1, 2, 3, 4, 5, 10, 20]
+#SWEEP_DELAYS = [1, 2, 3, 4, 5, 10, 20]
+SWEEP_DELAYS = [1, 2, 4, 10, 20]
 
 N_CCM_BOOTSTRAPS = 1000
 
@@ -218,11 +220,9 @@ def run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window):
             sys.stderr.write('  Running for E={}, tau={}\n'.format(E, tau))
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect, delays=delays)
-            if embedding.delay_vector_count == 0:
-                sys.stderr.write('  no valid delay vectors; skipping\n')
+            if embedding.delay_vector_count < embedding.embedding_dimension + 2:
+                sys.stderr.write('  Lmax < Lmin; skipping E={}, tau={}\n'.format(E, tau))
                 continue
-            elif embedding.delay_vector_count > embedding.embedding_dimension + 2:
-                sys.stderr.write('  Lmin < Lmax; skipping E={}, tau={}\n'.format(E, tau))
 
             run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window)
 
@@ -234,10 +234,7 @@ def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window):
         for tau in SWEEP_DELAYS:
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect, delays=delays)
-            if embedding.delay_vector_count == 0:
-                sys.stderr.write('  no valid delay vectors; skipping E={}, tau={}\n'.format(E, tau))
-                continue
-            elif embedding.delay_vector_count < embedding.embedding_dimension + 2:
+            if embedding.delay_vector_count < embedding.embedding_dimension + 2:
                 sys.stderr.write('  Lmax < Lmin; skipping E={}, tau={}\n'.format(E, tau))
                 continue
 

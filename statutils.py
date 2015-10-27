@@ -32,7 +32,6 @@ def inverse_quantile(x, y):
     if not isinstance(y, numpy.ndarray):
         y = numpy.array(y)
 
-    print y
     assert len(x.shape) == 1
 
     if x[0] == x[-1]:
