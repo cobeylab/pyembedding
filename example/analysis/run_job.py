@@ -180,7 +180,7 @@ def run_analysis(cname, cause, ename, effect):
         sys.stderr.write('  theiler_window = {0}\n'.format(theiler_window))
         assert theiler_window < effect.shape[0]
         
-        if EMBEDDING_ALGORITHM == 'uzal_nichawkde':
+        if EMBEDDING_ALGORITHM == 'uzal_nichkawde':
             run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window)
         elif EMBEDDING_ALGORITHM == 'uniform_sweep':
             run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window)
@@ -218,7 +218,7 @@ def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
     write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates_tup)
 
     sys.stderr.write('  Nichkawde sub-embedding: {0}\n'.format(delays))
-    analyze_increase(cname, cause, ename, effect, embedding, theiler_window, Lmin, Lmax)
+    run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window)
 
 def run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window):
     for E in SWEEP_EMBEDDING_DIMENSIONS:
