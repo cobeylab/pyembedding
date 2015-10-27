@@ -56,20 +56,26 @@ FIRST_DIFFERENCE = False            # If True, first-differences time series.
 STANDARDIZE = False                 # If True, each time series is standardized to mean=0, sd=1.
                                     # This is applied after all other transformations.
 
-# EMBEDDING_ALGORITHM = 'uzal_nichkawde'   # Runs Uzal cost function to find upper bound on Nichkawde embedding lags
+# Runs Uzal cost function to find upper bound on Nichkawde embedding lags, and then does bootstrapped CCM
+# at Lmin, Lmax for that embedding
+# EMBEDDING_ALGORITHM = 'uzal_nichkawde'
 # UZAL_FACTOR = 1.5                   # Multiplies Uzal upper bound by this much
 # OVERRIDE_UZAL_UPPER_BOUND = None    # If not None, skip Uzal algorithm and use this Nichkawde bound instead
 
-#EMBEDDING_ALGORITHM = 'uniform_sweep'       # Runs all valid E/tau combinations: SWEEP_EMBEDDING_DIMENSIONS x SWEEP_DELAYS
-#EMBEDDING_ALGORITHM = 'max_ccm_rho'       # Searches ccm rho at Lmax for all E/tau combinations, and then
-                                          # does full analysis at chosen E/tau
-EMBEDDING_ALGORITHM = 'max_univariate_prediction'  # Searches univariate prediction at for all E/tau combinations, and then
-                                            # does full analysis at chosen E/tau
-#SWEEP_EMBEDDING_DIMENSIONS = range(1, 11)
-SWEEP_EMBEDDING_DIMENSIONS = range(8, 11)
-#SWEEP_DELAYS = [1, 2, 3, 6, 11, 12]
-#SWEEP_DELAYS = [1, 2, 3, 4, 5, 10, 20]
-SWEEP_DELAYS = [1, 2, 4, 10, 20]
+# Runs all valid E/tau combinations: SWEEP_EMBEDDING_DIMENSIONS x SWEEP_DELAYS
+# EMBEDDING_ALGORITHM = 'uniform_sweep'
+
+# Searches for E/tau combination with highest CCM rho at Lmax, and then does bootstrapped CCM
+# at Lmin, Lmax for chosen E/tau combinations
+# EMBEDDING_ALGORITHM = 'max_ccm_rho'
+
+# Searches for E/tau combination with highest univariate prediction for effect variable, and then does bootstrapped CCM
+# at Lmin, Lmax for chosen E/tau combinations
+EMBEDDING_ALGORITHM = 'max_univariate_prediction'
+
+# These lists control the uniform_sweep, max_ccm_rho, and max_univariate_prediction modes above
+SWEEP_EMBEDDING_DIMENSIONS = range(1, 11)
+SWEEP_DELAYS = [1, 2, 4]
 
 N_CCM_BOOTSTRAPS = 1000
 
