@@ -43,8 +43,6 @@ def main():
     chunk_id = 0
     chunk_job_dirs = []
     for root, dirs, files in os.walk('jobs'):
-        if os.path.split(root)[-1] != '000':
-            continue
         if os.path.exists(os.path.join(root, 'job_info.json')):
             chunk_job_dirs.append(os.path.abspath(root))
             if len(chunk_job_dirs) == CHUNK_SIZE:
