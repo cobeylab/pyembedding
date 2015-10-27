@@ -41,13 +41,20 @@ def load_job_db(job_dir, job_db_path):
     
     for table_name, create_sql in job_db.execute('SELECT name, sql FROM sqlite_master WHERE type = "table"'):
         # Create table if it doesn't exist
-        colnames = ['job_id'] + [x[0] for x in job_db.execute('SELECT * FROM {}'.format(table_name)).description]
+        if table_name == 'job_info':
+            colnames = []
+        else:
+            colnames = ['job_id']
+        colnames += [x[0] for x in job_db.execute('SELECT * FROM {}'.format(table_name)).description]
         out_db.execute(
             'CREATE TABLE IF NOT EXISTS {} ({})'.format(table_name, ','.join(colnames))
         )
 
         # Insert all rows into master database
         for row in job_db.execute('SELECT * FROM {0}'.format(table_name)):
+            if table_name == 'job_info':
+                row = row[1:]
+            
             out_db.execute(
                 'INSERT INTO {} VALUES ({})'.format(
                     table_name, ','.join(['?'] * len(colnames))
