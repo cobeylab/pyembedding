@@ -60,10 +60,10 @@ STANDARDIZE = False                 # If True, each time series is standardized 
 # UZAL_FACTOR = 1.5                   # Multiplies Uzal upper bound by this much
 # OVERRIDE_UZAL_UPPER_BOUND = None    # If not None, skip Uzal algorithm and use this Nichkawde bound instead
 
-EMBEDDING_ALGORITHM = 'uniform_sweep'       # Runs all valid E/tau combinations: SWEEP_EMBEDDING_DIMENSIONS x SWEEP_DELAYS
+#EMBEDDING_ALGORITHM = 'uniform_sweep'       # Runs all valid E/tau combinations: SWEEP_EMBEDDING_DIMENSIONS x SWEEP_DELAYS
 #EMBEDDING_ALGORITHM = 'max_ccm_rho'       # Searches ccm rho at Lmax for all E/tau combinations, and then
                                           # does full analysis at chosen E/tau
-#EMBEDDING_ALGORITHM = 'max_univariate_prediction'  # Searches univariate prediction at for all E/tau combinations, and then
+EMBEDDING_ALGORITHM = 'max_univariate_prediction'  # Searches univariate prediction at for all E/tau combinations, and then
                                             # does full analysis at chosen E/tau
 #SWEEP_EMBEDDING_DIMENSIONS = range(1, 11)
 SWEEP_EMBEDDING_DIMENSIONS = range(8, 11)
@@ -181,7 +181,7 @@ def run_analysis(cname, cause, ename, effect):
         elif EMBEDDING_ALGORITHM == 'max_ccm_rho':
             run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window)
         elif EMBEDDING_ALGORITHM == 'max_univariate_prediction':
-            run_analysis_best_univariate_prediction(cname, cause, ename, effect, theiler_window)
+            run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_window)
 
 def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
     # Calculate maximum prediction horizon (used by Uzal cost function)
@@ -248,7 +248,31 @@ def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window):
     run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window)
 
 def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_window):
-    pass
+    max_corr = float('-inf')
+    max_corr_Etau = None
+    for E in SWEEP_EMBEDDING_DIMENSIONS:
+        for tau in SWEEP_DELAYS:
+            delays = tuple(range(0, E*tau, tau))
+            embedding = pyembedding.Embedding(effect[:-1], delays)
+            if embedding.delay_vector_count < embedding.embedding_dimension + 2:
+                sys.stderr.write('  Lmax < Lmin; skipping E={}, tau={}\n'.format(E, tau))
+                continue
+
+            eff_off, eff_off_pred = embedding.simplex_predict_using_embedding(embedding, effect[1:], theiler_window=theiler_window)
+            corr = numpy.corrcoef(eff_off, eff_off_pred)[0,1]
+
+            db.execute('CREATE TABLE IF NOT EXISTS univariate_predictions (variable, delays, correlation)')
+            db.execute('INSERT INTO univariate_predictions VALUES (?,?,?)', [ename, str(delays), corr])
+
+            sys.stderr.write('  corr for E={}, tau={} : {}\n'.format(E, tau, corr))
+            if corr > max_corr:
+                max_corr = corr
+                max_corr_Etau = (E, tau)
+    E, tau = max_corr_Etau
+    delays = tuple(range(0, E*tau, tau))
+    max_corr_emb = pyembedding.Embedding(effect, delays)
+    sys.stderr.write('  Using E = {}, tau = {}\n'.format(*max_corr_Etau))
+    run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window)
 
 def run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window):
     # min library size: embedding_dimension + 2,
