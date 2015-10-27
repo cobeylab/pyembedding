@@ -123,11 +123,14 @@ class Embedding:
                 continue
             t_list.append(i)
             embedding_list.append(delay_vector)
-        assert len(embedding_list) > 0
 
-        self.t = numpy.array(t_list)
-        self.embedding_mat = numpy.array(embedding_list)
-        assert self.embedding_mat.shape[1] == len(self.delays)
+        if len(embedding_list) == 0:
+            self.t = numpy.array(t_list, dtype=float)
+            self.embedding_mat = numpy.zeros((0, len(self.delays)), dtype=float)
+        else:
+            self.t = numpy.array(t_list)
+            self.embedding_mat = numpy.array(embedding_list)
+            assert self.embedding_mat.shape[1] == len(self.delays)
 
     def sample_embedding(self, n, replace=True, rng=numpy.random):
         '''
@@ -636,7 +639,6 @@ def nichkawde_embedding(x, theiler_window, max_embedding_dimension, fnn_rtol=10,
         derivs = numpy.zeros(max_embedding_dimension, dtype=float)
         fnn_rates = numpy.zeros(max_embedding_dimension, dtype=float)
         for delay in range(max_embedding_dimension):
-            sys.stderr.write('Trying {0}\n'.format(delay))
             if delay in delays:
                 derivs[delay] = 0.0
             else:
@@ -650,20 +652,17 @@ def nichkawde_embedding(x, theiler_window, max_embedding_dimension, fnn_rtol=10,
 
                 deriv = dist_next / dn_all[valid_t_delay]
                 deriv = deriv[deriv != 0.0]
-                sys.stderr.write('deriv.shape: {0}\n'.format(deriv.shape))
 
                 fnn_rates[delay] = float((deriv > fnn_rtol).sum()) / deriv.shape[0]
 
                 # Take geometric mean over nonzero distances
                 geo_mean_deriv = numpy.exp(numpy.log(deriv).mean())
-                sys.stderr.write('geo_mean_deriv: {0}\n'.format(geo_mean_deriv))
 
                 derivs[delay] = geo_mean_deriv
 
         derivs_list.append(derivs)
         fnn_rates_list.append(fnn_rates)
         best_delay = numpy.argmax(derivs)
-        print best_delay
         if fnn_rates[best_delay] < fnn_threshold:
             break
         else:
