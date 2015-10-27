@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # Make sure this is an absolute path
-#SIM_DB = '/Users/ebaskerv/uchicago/midway_cobey/2015-10-23-simulations/results_gathered.sqlite'
+#SIM_DB_PATH = '/Users/ebaskerv/uchicago/midway_cobey/2015-10-23-simulations/results_gathered.sqlite'
 SIM_DB_PATH = '/project/cobey/ccmproject-storage/2015-10-23-simulations/results_gathered.sqlite'
 
 # Must be less than or equal to the number of replicates in the sim db (100).
@@ -29,11 +29,11 @@ if os.path.exists('jobs'):
     sys.stderr.write('jobs directory already exists; aborting.\n')
     sys.exit(1)
 
-if not os.path.exists(SIM_DB):
+if not os.path.exists(SIM_DB_PATH):
     sys.stderr.write('simulations DB not present; aborting.\n')
     sys.exit(1)
 
-with sqlite3.connect(SIM_DB) as db:
+with sqlite3.connect(SIM_DB_PATH) as db:
     for job_id, job_dir, eps, beta00, sigma01, sd_proc, replicate_id, sim_random_seed in db.execute(
         'SELECT * FROM job_info WHERE replicate_id < ?', [N_REPLICATES]
     ):
