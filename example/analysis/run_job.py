@@ -24,8 +24,8 @@ import statutils
 import npybuffer
 
 # Make sure this is an absolute path
-SIM_DB_PATH = '/Users/ebaskerv/uchicago/midway_cobey/2015-10-23-simulations/results_gathered.sqlite'
-#SIM_DB_PATH = '/project/cobey/ccmprojet-storage/2015-10-23-simulations/results_gathered.sqlite'
+#SIM_DB_PATH = '/Users/ebaskerv/uchicago/midway_cobey/2015-10-23-simulations/results_gathered.sqlite'
+SIM_DB_PATH = '/project/cobey/ccmproject-storage/2015-10-23-simulations/results_gathered.sqlite'
 
 SIMULATION_SAMPLES_PER_YEAR = 36    # This is an assumption about the time series being loaded; don't change
                                     # unless a new simulation DB is being used with different settings.
@@ -36,8 +36,14 @@ TS_Y_AXIS = 'monthly cases'         # below.
 
 CCM_YEARS = 100                     # Number of years to use at end of time series
 
-CCM_SAMPLES_PER_YEAR = 1           # E.g., 12 implies 30-day samples in a 360-day year.
+CCM_SAMPLES_PER_YEAR = 12           # E.g., 12 implies 30-day samples in a 360-day year.
                                     # Must divide evenly into SIMULATION_SAMPLES_PER_YEAR
+
+MAX_THEILER_WINDOW = 60             # Maximum window for exclude nearest neighbors temporally
+
+MAX_PREDICTION_HORIZON = 120        # Twice the Theiler window is used to set the prediction
+                                    # horizon for the Uzal cost function; it is also bounded
+                                    # by this value.
 
 VARIABLE_NAME = 'C'                 # Can also be 'logS' or 'logI'.
 
@@ -58,9 +64,9 @@ STANDARDIZE = False                 # If True, each time series is standardized 
 
 # Runs Uzal cost function to find upper bound on Nichkawde embedding lags, and then does bootstrapped CCM
 # at Lmin, Lmax for that embedding
-# EMBEDDING_ALGORITHM = 'uzal_nichkawde'
-# UZAL_FACTOR = 1.5                   # Multiplies Uzal upper bound by this much
-# OVERRIDE_UZAL_UPPER_BOUND = None    # If not None, skip Uzal algorithm and use this Nichkawde bound instead
+EMBEDDING_ALGORITHM = 'uzal_nichkawde'
+UZAL_FACTOR = 2.0                   # Multiplies Uzal upper bound by this much
+OVERRIDE_UZAL_UPPER_BOUND = None    # If not None, skip Uzal algorithm and use this Nichkawde bound instead
 
 # Runs all valid E/tau combinations: SWEEP_EMBEDDING_DIMENSIONS x SWEEP_DELAYS
 # EMBEDDING_ALGORITHM = 'uniform_sweep'
@@ -71,7 +77,7 @@ STANDARDIZE = False                 # If True, each time series is standardized 
 
 # Searches for E/tau combination with highest univariate prediction for effect variable, and then does bootstrapped CCM
 # at Lmin, Lmax for chosen E/tau combinations
-EMBEDDING_ALGORITHM = 'max_univariate_prediction'
+# EMBEDDING_ALGORITHM = 'max_univariate_prediction'
 
 # These lists control the uniform_sweep, max_ccm_rho, and max_univariate_prediction modes above
 SWEEP_EMBEDDING_DIMENSIONS = range(1, 11)
@@ -176,11 +182,11 @@ def run_analysis(cname, cause, ename, effect):
         sys.stderr.write('  ac_delay, autocorr = {0}, {1}\n'.format(ac_delay, autocorr))
         
         # Calculate Theiler window (limit on closeness of neighbors in time)
-        theiler_window = 3 * ac_delay
+        theiler_window = min(MAX_THEILER_WINDOW, 3 * ac_delay)
         sys.stderr.write('  theiler_window = {0}\n'.format(theiler_window))
         assert theiler_window < effect.shape[0]
         
-        if EMBEDDING_ALGORITHM == 'uzal_nichawkde':
+        if EMBEDDING_ALGORITHM == 'uzal_nichkawde':
             run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window)
         elif EMBEDDING_ALGORITHM == 'uniform_sweep':
             run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window)
@@ -191,7 +197,7 @@ def run_analysis(cname, cause, ename, effect):
 
 def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
     # Calculate maximum prediction horizon (used by Uzal cost function)
-    prediction_horizon = 2 * theiler_window
+    prediction_horizon = min(MAX_PREDICTION_HORIZON, 2 * theiler_window)
     sys.stderr.write('  prediction_horizon = {0}\n'.format(prediction_horizon))
     assert prediction_horizon > theiler_window
 
@@ -218,7 +224,7 @@ def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
     write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates_tup)
 
     sys.stderr.write('  Nichkawde sub-embedding: {0}\n'.format(delays))
-    analyze_increase(cname, cause, ename, effect, embedding, theiler_window, Lmin, Lmax)
+    run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window)
 
 def run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window):
     for E in SWEEP_EMBEDDING_DIMENSIONS:
