@@ -652,13 +652,17 @@ def nichkawde_embedding(x, theiler_window, max_embedding_dimension, fnn_rtol=10,
 
                 deriv = dist_next / dn_all[valid_t_delay]
                 deriv = deriv[deriv != 0.0]
+                
+                if deriv.shape[0] == 0:
+                    fnn_rates[delay] = 0.0
+                    derivs[delay] = 0.0
+                else:
+                    fnn_rates[delay] = float((deriv > fnn_rtol).sum()) / deriv.shape[0]
+                    
+                    # Take geometric mean over nonzero distances
+                    geo_mean_deriv = numpy.exp(numpy.log(deriv).mean())
 
-                fnn_rates[delay] = float((deriv > fnn_rtol).sum()) / deriv.shape[0]
-
-                # Take geometric mean over nonzero distances
-                geo_mean_deriv = numpy.exp(numpy.log(deriv).mean())
-
-                derivs[delay] = geo_mean_deriv
+                    derivs[delay] = geo_mean_deriv
 
         derivs_list.append(derivs)
         fnn_rates_list.append(fnn_rates)
