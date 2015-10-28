@@ -228,7 +228,7 @@ def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
 
 def run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window):
     for E in SWEEP_EMBEDDING_DIMENSIONS:
-        for tau in SWEEP_DELAYS:
+        for tau in (SWEEP_DELAYS if E > 1 else [1]):
             sys.stderr.write('  Running for E={}, tau={}\n'.format(E, tau))
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect, delays=delays)
@@ -243,7 +243,7 @@ def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window):
     max_corr_emb = None
     max_corr_Etau = None
     for E in SWEEP_EMBEDDING_DIMENSIONS:
-        for tau in SWEEP_DELAYS:
+        for tau in (SWEEP_DELAYS if E > 1 else [1]):
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect, delays=delays)
             if embedding.delay_vector_count < embedding.embedding_dimension + 2:
@@ -313,9 +313,9 @@ def run_ccm(cname, ename, embedding, cause, theiler_window):
     assert isinstance(embedding, pyembedding.Embedding)
 
     ccm_result, y_actual, y_pred = embedding.ccm(embedding, cause, theiler_window=theiler_window)
-    db.execute('CREATE TABLE IF NOT EXISTS ccm_correlations (cause, effect, L, delays, correlation)')
+    db.execute('CREATE TABLE IF NOT EXISTS ccm_correlations_single (cause, effect, L, delays, correlation)')
     db.execute(
-        'INSERT INTO ccm_correlations VALUES (?,?,?,?,?)',
+        'INSERT INTO ccm_correlations_single VALUES (?,?,?,?,?)',
         [cname, ename, embedding.delay_vector_count, str(embedding.delays), ccm_result.correlation]
     )
 

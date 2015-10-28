@@ -26,6 +26,9 @@ def load_job_db(job_dir, job_db_path):
     job_id = jsonobject.load_from_file(os.path.join(job_dir, 'job_info.json')).job_id
     
     for table_name, create_sql in job_db.execute('SELECT name, sql FROM sqlite_master WHERE type = "table"'):
+        if table_name == 'ccm_correlations':
+            continue
+        
         # Create table if it doesn't exist
         if table_name == 'job_info':
             colnames = []
