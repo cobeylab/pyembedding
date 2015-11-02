@@ -45,7 +45,17 @@ def get_positive_rate(cause, effect, eps, beta00, sigma01, sd_proc):
     else:
         return float('nan')                
 
-def plot_one(cause, effect, seasonal, different):
+def plot_heatmap(mat, xlabel, xticks, ylabel, yticks, vmin=0, vmax=1):
+    pyplot.imshow(mat, origin='lower', vmin=vmin, vmax=vmax, interpolation='none')
+    
+    pyplot.xticks(range(mat.shape[0]), xlabels)
+    pyplot.xlabel(xlabel)
+    pyplot.yticks(range(mat.shape[1]), ylabels)
+    pyplot.ylabel(ylabel)
+    
+    pyplot.colorbar()
+
+def plot_positive_rate(cause, effect, seasonal, different):
     heatmap = numpy.zeros((len(sigma01_vals), len(sd_proc_vals)))
     
     eps = eps_vals[seasonal]
@@ -56,14 +66,12 @@ def plot_one(cause, effect, seasonal, different):
             heatmap[i,j] = get_positive_rate(cause, effect, eps, beta00, sigma01, sd_proc)
     print heatmap
     
-    pyplot.xticks(range(len(sd_proc_vals)), ['{0:.2g}'.format(x) for x in sd_proc_vals])
-    pyplot.xlabel('sd_proc')
-    pyplot.yticks(range(len(sigma01_vals)), ['{0:.2g}'.format(y) for y in sigma01_vals])
-    pyplot.ylabel('sigma01')
-    
-    pyplot.imshow(heatmap, origin='lower', vmin=0, vmax=1, interpolation='none')
-    pyplot.colorbar()
-    pyplot.title('{cause} causes {effect}'.format(cause=cause, effect=effect))
+    plot_heatmap(heatmap,
+        'sd_proc', ['{0:.2g}'.format(x) for x in sd_proc_vals],
+        'sigma01', ['{0:.2g}'.format(y) for y in sigma01_vals],
+        vmin=0, vmax=1
+    )
+    pyplot.title('positive rate: {cause} causes {effect}'.format(cause=cause, effect=effect))
 
 for seasonal in (0, 1):
     for different in (0, 1):
@@ -71,11 +79,15 @@ for seasonal in (0, 1):
         diff_label = 'different' if different else 'identical'
         
         fig = pyplot.figure(figsize=(12,7))
-        pyplot.subplot(1, 2, 1)
-        plot_one('C0', 'C1', seasonal, different)
-        pyplot.subplot(1, 2, 2)
-        plot_one('C1', 'C0', seasonal, different)
-        pyplot.subplot(1, 2, 2)
+        pyplot.subplot(3, 2, 1)
+        plot_positive_rate('C0', 'C1', seasonal, different)
+        pyplot.subplot(3, 2, 2)
+        plot_positive_rate('C1', 'C0', seasonal, different)
+        
+        pyplot.subplot(3, 2, 1)
+        plot_mean_pvalue('C0', 'C1', seasonal, different)
+        pyplot.subplot(3, 2, 2)
+        plot_mean_pvalue('C1', 'C0', seasonal, different)
         
         pyplot.suptitle('{}, {} - Rate of Identified Increase (fraction with p < 0.05)'.format(seas_label, diff_label))
         pyplot.savefig('positive_rate_{}_{}.png'.format(seas_label, diff_label))
