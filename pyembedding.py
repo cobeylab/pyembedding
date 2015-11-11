@@ -8,7 +8,7 @@ SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 import numpy
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
-import jsonobject
+from collections import OrderedDict
 
 # def find_theiler_window(x):
 #     for j in range(x.shape[0]):
@@ -446,7 +446,7 @@ class Embedding:
         else:
             corr = numpy.corrcoef(y_actual[valid], y_pred[valid])[0,1]
 
-        return jsonobject.JSONObject([
+        return OrderedDict([
             ('correlation', corr),
             ('valid_count', valid_count),
             ('sd_actual', sd_actual),

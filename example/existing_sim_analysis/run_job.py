@@ -3,7 +3,7 @@
 import os
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 import sys
-sys.path.append(os.path.join(SCRIPT_DIR, 'pyembedding'))
+#sys.path.append(os.path.join(SCRIPT_DIR, 'pyembedding'))
 import sqlite3
 import numpy
 import matplotlib
@@ -18,155 +18,103 @@ from collections import OrderedDict
 # if that's appropriate
 import pyembedding
 import uzalcost
-import jsonobject
 import models
 import statutils
 import npybuffer
 
-# Make sure this is an absolute path
-#SIM_DB_PATH = '/Users/ebaskerv/uchicago/midway_cobey/2015-10-23-simulations/results_gathered.sqlite'
-SIM_DB_PATH = '/project/cobey/ccmproject-storage/2015-10-23-simulations/results_gathered.sqlite'
-
-SIMULATION_SAMPLES_PER_YEAR = 36    # This is an assumption about the time series being loaded; don't change
-                                    # unless a new simulation DB is being used with different settings.
-                                    # 36 implies 10-day samples in a 360-day year in the original simulations.
-
-TS_X_AXIS = 'time (years)'          # Labels for time-series plot. Rewrite to match settings
-TS_Y_AXIS = 'monthly cases'         # below.
-
-CCM_YEARS = 100                     # Number of years to use at end of time series
-
-CCM_SAMPLES_PER_YEAR = 12           # E.g., 12 implies 30-day samples in a 360-day year.
-                                    # Must divide evenly into SIMULATION_SAMPLES_PER_YEAR
-
-MAX_THEILER_WINDOW = 60             # Maximum window for exclude nearest neighbors temporally
-
-MAX_PREDICTION_HORIZON = 120        # Twice the Theiler window is used to set the prediction
-                                    # horizon for the Uzal cost function; it is also bounded
-                                    # by this value.
-
-VARIABLE_NAME = 'C'                 # Can also be 'logS' or 'logI'.
-
-ADD_SAMPLES = True                  # If True, uses *sum* of original samples for analysis
-                                    # rather than throwing out intervening samples.
-                                    # For C (cases), this should probably be True, since it's a
-                                    # measure of cumulative cases during a time period.
-
-LOG_TRANSFORM = False               # If True, takes the natural log of samples.
-                                    # If ADD_SAMPLES is True, then this is applied *after*
-                                    # adding samples together.
-
-FIRST_DIFFERENCE = False            # If True, first-differences time series.
-                                    # This is applied after ADD_SAMPLES and LOG_TRANSFORM.
-
-STANDARDIZE = False                 # If True, each time series is standardized to mean=0, sd=1.
-                                    # This is applied after all other transformations.
-
-# Runs Uzal cost function to find upper bound on Nichkawde embedding lags, and then does bootstrapped CCM
-# at Lmin, Lmax for that embedding
-EMBEDDING_ALGORITHM = 'uzal_nichkawde'
-UZAL_FACTOR = 2.0                   # Multiplies Uzal upper bound by this much
-OVERRIDE_UZAL_UPPER_BOUND = None    # If not None, skip Uzal algorithm and use this Nichkawde bound instead
-
-# Runs all valid E/tau combinations: SWEEP_EMBEDDING_DIMENSIONS x SWEEP_DELAYS
-# EMBEDDING_ALGORITHM = 'uniform_sweep'
-
-# Searches for E/tau combination with highest CCM rho at Lmax, and then does bootstrapped CCM
-# at Lmin, Lmax for chosen E/tau combinations
-# EMBEDDING_ALGORITHM = 'max_ccm_rho'
-
-# Searches for E/tau combination with highest univariate prediction for effect variable, and then does bootstrapped CCM
-# at Lmin, Lmax for chosen E/tau combinations
-# EMBEDDING_ALGORITHM = 'max_univariate_prediction'
-
-# These lists control the uniform_sweep, max_ccm_rho, and max_univariate_prediction modes above
-SWEEP_EMBEDDING_DIMENSIONS = range(1, 11)
-SWEEP_DELAYS = [1, 2, 4]
-
-N_CCM_BOOTSTRAPS = 1000
-
-# Make sure simulation database is present
-if not os.path.exists(SIM_DB_PATH):
-    sys.stderr.write('Simulation database not present; aborting\n')
-    sys.exit(1)
-
-# Connect to output database
-if os.path.exists('results.sqlite'):
-    sys.stderr.write('Output database present. Aborting.\n')
-    sys.exit(1)
-db = sqlite3.connect('results.sqlite')
-
-# Load job info and record in database
-if not os.path.exists('job_info.json'):
-    sys.stderr.write('job_info.json missing. aborting.\n')
-    sys.exit(1)
-job_info = jsonobject.load_from_file('job_info.json')
-job_id = job_info.job_id
-db.execute('CREATE TABLE job_info ({0})'.format(', '.join([key for key in job_info.keys()])))
-db.execute('INSERT INTO job_info VALUES ({0})'.format(', '.join(['?'] * len(job_info))), job_info.values())
-
-# Set up RNG
-rng = numpy.random.RandomState(job_info.random_seed)
-
 def main():
     '''main(): gets called at the end (after other functions have been defined)'''
-    X = load_simulation()
+
+    # Load job info and record in database
+    if not os.path.exists('runmany_info.json'):
+        sys.stderr.write('runmany_info.json missing. aborting.\n')
+        sys.exit(1)
+    runmany_info = load_json('runmany_info.json')
+    sim_db_path = runmany_info['simulation_db_path']
+    job_info = runmany_info['job_info']
+
+    # Make sure simulation database is present
+    if not os.path.exists(sim_db_path):
+        sys.stderr.write('Simulation database not present; aborting\n')
+        sys.exit(1)
+
+    # Connect to output database
+    if os.path.exists('results.sqlite'):
+        sys.stderr.write('Output database present. Aborting.\n')
+        sys.exit(1)
+    db = sqlite3.connect('results.sqlite')
+    job_id = runmany_info['simulation_job_id']
+    db.execute('CREATE TABLE job_info ({0})'.format(', '.join([key for key in job_info.keys()])))
+    db.execute('INSERT INTO job_info VALUES ({0})'.format(', '.join(['?'] * len(job_info))), job_info.values())
+
+    ccm_settings = runmany_info['ccm_settings']
+
+    # Set up RNG
+    rng = numpy.random.RandomState(job_info['random_seed'])
+    X = load_simulation(sim_db_path, job_id, ccm_settings)
+    
     x0 = X[:,0]
     x1 = X[:,1]
+
+    variable_name = ccm_settings['variable_name']
+    x0name = variable_name + '0'
+    x1name = variable_name + '1'
     
-    x0name = VARIABLE_NAME + '0'
-    x1name = VARIABLE_NAME + '1'
+    plot_timeseries([x0, x1], [x0name, x1name], ccm_settings['timeseries_x_label'], ccm_settings['timeseries_y_label'], 'timeseries.png')
     
-    plot_timeseries([x0, x1], [x0name, x1name], TS_X_AXIS, TS_Y_AXIS, 'timeseries.png')
-    
-    run_analysis(x0name, x0, x1name, x1)
-    run_analysis(x1name, x1, x0name, x0)
+    run_analysis(x0name, x0, x1name, x1, db, rng, ccm_settings)
+    run_analysis(x1name, x1, x0name, x0, db, rng, ccm_settings)
 
     db.commit()
     db.close()
 
-def load_simulation():
+def load_simulation(sim_db_path, job_id, ccm_settings):
     '''Loads and processes time series based on settings at top of file.'''
-    with sqlite3.connect(SIM_DB_PATH) as sim_db:
+    with sqlite3.connect(sim_db_path) as sim_db:
         buf = sim_db.execute(
-            'SELECT {} FROM timeseries WHERE job_id = ?'.format(VARIABLE_NAME),
+            'SELECT {} FROM timeseries WHERE job_id = ?'.format(ccm_settings['variable_name']),
             [job_id]
         ).next()[0]
         assert isinstance(buf, buffer)
         arr = npybuffer.npy_buffer_to_ndarray(buf)
     assert arr.shape[1] == 2
-    
+
+    years = ccm_settings['years']
+    simulation_samples_per_year = ccm_settings['simulation_samples_per_year']
+    ccm_samples_per_year = ccm_settings['ccm_samples_per_year']
+
     # Get the unthinned sample from the end of the time series
-    sim_samps_unthinned = CCM_YEARS * SIMULATION_SAMPLES_PER_YEAR
-    thin = SIMULATION_SAMPLES_PER_YEAR / CCM_SAMPLES_PER_YEAR
+    sim_samps_unthinned = years * simulation_samples_per_year
+    thin = simulation_samples_per_year / ccm_samples_per_year
     arr_end_unthinned = arr[-sim_samps_unthinned:, :]
     
     # Thin the samples, adding in the intervening samples if requested
     arr_mod = arr_end_unthinned[::thin, :]
-    if ADD_SAMPLES:
+    if ccm_settings['add_samples']:
         for i in range(1, thin):
             arr_mod += arr_end_unthinned[i::thin, :]
     
-    if LOG_TRANSFORM:
+    if ccm_settings['log_transform']:
         arr_mod = numpy.log(arr_mod)
     
-    if FIRST_DIFFERENCE:
+    if ccm_settings['first_difference']:
         arr_mod = arr_mod[1:, :] - arr_mod[:-1, :]
     
-    if STANDARDIZE:
+    if ccm_settings['standardize']:
         for i in range(arr_mod.shape[1]):
             arr_mod[:,i] -= numpy.mean(arr_mod[:,i])
             arr_mod[:,i] /= numpy.std(arr_mod[:,i])
-    
-    if FIRST_DIFFERENCE:
-        assert arr_mod.shape[0] == CCM_YEARS * CCM_SAMPLES_PER_YEAR - 1
+
+
+    if ccm_settings['first_difference']:
+        assert arr_mod.shape[0] == years * ccm_samples_per_year - 1
     else:
-        assert arr_mod.shape[0] == CCM_YEARS * CCM_SAMPLES_PER_YEAR
+        assert arr_mod.shape[0] == years * ccm_samples_per_year
     assert arr_mod.shape[1] == 2
     
     return arr_mod
 
-def run_analysis(cname, cause, ename, effect):
+def run_analysis(cname, cause, ename, effect, db, rng, ccm_settings):
     '''Run analysis for a single causal direction.'''
     sys.stderr.write('Running {0}-causes-{1}\n'.format(cname, ename))
 
@@ -182,22 +130,23 @@ def run_analysis(cname, cause, ename, effect):
         sys.stderr.write('  ac_delay, autocorr = {0}, {1}\n'.format(ac_delay, autocorr))
         
         # Calculate Theiler window (limit on closeness of neighbors in time)
-        theiler_window = min(MAX_THEILER_WINDOW, 3 * ac_delay)
+        theiler_window = min(ccm_settings['max_theiler_window'], 3 * ac_delay)
         sys.stderr.write('  theiler_window = {0}\n'.format(theiler_window))
         assert theiler_window < effect.shape[0]
-        
-        if EMBEDDING_ALGORITHM == 'uzal_nichkawde':
-            run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window)
-        elif EMBEDDING_ALGORITHM == 'uniform_sweep':
-            run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window)
-        elif EMBEDDING_ALGORITHM == 'max_ccm_rho':
-            run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window)
-        elif EMBEDDING_ALGORITHM == 'max_univariate_prediction':
-            run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_window)
 
-def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
+        embedding_algorithm = ccm_settings['embedding_algorithm']
+        if embedding_algorithm == 'uzal_nichkawde':
+            run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings)
+        elif embedding_algorithm == 'uniform_sweep':
+            run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings)
+        elif embedding_algorithm == 'max_ccm_rho':
+            run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings)
+        elif embedding_algorithm == 'max_univariate_prediction':
+            run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings)
+
+def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings):
     # Calculate maximum prediction horizon (used by Uzal cost function)
-    prediction_horizon = min(MAX_PREDICTION_HORIZON, 2 * theiler_window)
+    prediction_horizon = min(ccm_settings['max_prediction_horizon'], 2 * theiler_window)
     sys.stderr.write('  prediction_horizon = {0}\n'.format(prediction_horizon))
     assert prediction_horizon > theiler_window
 
@@ -206,8 +155,8 @@ def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
     sys.stderr.write('  max_window = {0}\n'.format(max_window))
 
     # Run Uzal cost function (will implicitly compile Uzal's C code if necessary)
-    if OVERRIDE_UZAL_UPPER_BOUND is not None:
-        max_embedding_dimension = OVERRIDE_UZAL_UPPER_BOUND
+    if 'override_uzal_upper_bound' in ccm_settings and ccm_settings['override_uzal_upper_bound'] is not None:
+        max_embedding_dimension = ccm_settings['override_uzal_upper_bound']
     else:
         ms, Lks, params = uzalcost.run_uzal_costfunc(
             effect, theiler_window=theiler_window, max_prediction_horizon=prediction_horizon,
@@ -215,20 +164,20 @@ def run_analysis_uzal_nichkawde(cname, cause, ename, effect, theiler_window):
         )
         best_m_index = numpy.argmin(Lks)
         sys.stderr.write('  Uzal full embedding dimension = {0} (Lk = {1})\n'.format(ms[best_m_index], Lks[best_m_index]))
-        max_embedding_dimension = int(numpy.round(UZAL_FACTOR * ms[best_m_index]))
+        max_embedding_dimension = int(numpy.round(ccm_settings['uzal_factor'] * ms[best_m_index]))
     sys.stderr.write('  Using max embedding dimension = {}\n'.format(max_embedding_dimension))
 
     # Run Nichkawde algorithm to identify sub-embedding
     embedding, derivs_tup, fnn_rates_tup = pyembedding.nichkawde_embedding(effect, theiler_window, max_embedding_dimension, return_metrics=True)
     delays = embedding.delays
-    write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates_tup)
+    write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates_tup, db)
 
     sys.stderr.write('  Nichkawde sub-embedding: {0}\n'.format(delays))
-    run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window)
+    run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window, ccm_settings['n_ccm_bootstraps'], db, rng)
 
-def run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window):
-    for E in SWEEP_EMBEDDING_DIMENSIONS:
-        for tau in (SWEEP_DELAYS if E > 1 else [1]):
+def run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings):
+    for E in ccm_settings['sweep_embedding_dimensions']:
+        for tau in (ccm_settings['sweep_delays'] if E > 1 else [1]):
             sys.stderr.write('  Running for E={}, tau={}\n'.format(E, tau))
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect, delays=delays)
@@ -236,34 +185,34 @@ def run_analysis_uniform_sweep(cname, cause, ename, effect, theiler_window):
                 sys.stderr.write('  Lmax < Lmin; skipping E={}, tau={}\n'.format(E, tau))
                 continue
 
-            run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window)
+            run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window, ccm_settings['n_ccm_bootstraps'], db, rng)
 
-def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window):
+def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings):
     max_corr = float('-inf')
     max_corr_emb = None
     max_corr_Etau = None
-    for E in SWEEP_EMBEDDING_DIMENSIONS:
-        for tau in (SWEEP_DELAYS if E > 1 else [1]):
+    for E in ccm_settings['sweep_embedding_dimensions']:
+        for tau in (ccm_settings['sweep_delays'] if E > 1 else [1]):
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect, delays=delays)
             if embedding.delay_vector_count < embedding.embedding_dimension + 2:
                 sys.stderr.write('  Lmax < Lmin; skipping E={}, tau={}\n'.format(E, tau))
                 continue
 
-            corr = run_ccm(cname, ename, embedding, cause, theiler_window)
+            corr = run_ccm(cname, ename, embedding, cause, theiler_window, db)
             sys.stderr.write('  corr for E={}, tau={} : {}\n'.format(E, tau, corr))
             if corr > max_corr:
                 max_corr = corr
                 max_corr_emb = embedding
                 max_corr_Etau = (E, tau)
     sys.stderr.write('  Using E={}, tau = {}\n'.format(*max_corr_Etau))
-    run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window)
+    run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window, ccm_settings['n_ccm_bootstraps'], db, rng)
 
-def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_window):
+def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings):
     max_corr = float('-inf')
     max_corr_Etau = None
-    for E in SWEEP_EMBEDDING_DIMENSIONS:
-        for tau in SWEEP_DELAYS:
+    for E in ccm_settings['sweep_embedding_dimensions']:
+        for tau in ccm_settings['sweep_delays']:
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect[:-1], delays)
             if embedding.delay_vector_count < embedding.embedding_dimension + 2:
@@ -284,9 +233,9 @@ def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_
     delays = tuple(range(0, E*tau, tau))
     max_corr_emb = pyembedding.Embedding(effect, delays)
     sys.stderr.write('  Using E = {}, tau = {}\n'.format(*max_corr_Etau))
-    run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window)
+    run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window, ccm_settings['n_ccm_bootstraps'], db, rng)
 
-def run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window):
+def run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_window, n_bootstraps, db, rng):
     # min library size: embedding_dimension + 2,
     # so vectors should usually have embedding_dimension + 1 neighbors available
     Lmin = embedding.embedding_dimension + 2
@@ -297,8 +246,8 @@ def run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_w
     assert Lmax > Lmin
     sys.stderr.write('  Using Lmin = {}, Lmax = {}\n'.format(Lmin, Lmax))
 
-    corrs_Lmin = run_ccm_bootstraps(cname, ename, embedding, cause, Lmin, theiler_window)
-    corrs_Lmax = run_ccm_bootstraps(cname, ename, embedding, cause, Lmax, theiler_window)
+    corrs_Lmin = run_ccm_bootstraps(cname, ename, embedding, cause, Lmin, theiler_window, n_bootstraps, db, rng)
+    corrs_Lmax = run_ccm_bootstraps(cname, ename, embedding, cause, Lmax, theiler_window, n_bootstraps, db, rng)
 
     db.execute(
         'CREATE TABLE IF NOT EXISTS ccm_increase (cause, effect, Lmin, Lmax, delays, pvalue_increase)'
@@ -309,28 +258,28 @@ def run_analysis_for_embedding(cname, cause, ename, effect, embedding, theiler_w
     )
     db.commit()
 
-def run_ccm(cname, ename, embedding, cause, theiler_window):
+def run_ccm(cname, ename, embedding, cause, theiler_window, db):
     assert isinstance(embedding, pyembedding.Embedding)
 
     ccm_result, y_actual, y_pred = embedding.ccm(embedding, cause, theiler_window=theiler_window)
     db.execute('CREATE TABLE IF NOT EXISTS ccm_correlations_single (cause, effect, L, delays, correlation)')
     db.execute(
         'INSERT INTO ccm_correlations_single VALUES (?,?,?,?,?)',
-        [cname, ename, embedding.delay_vector_count, str(embedding.delays), ccm_result.correlation]
+        [cname, ename, embedding.delay_vector_count, str(embedding.delays), ccm_result['correlation']]
     )
 
-    return ccm_result.correlation
+    return ccm_result['correlation']
 
-def run_ccm_bootstraps(cname, ename, embedding, cause, L, theiler_window):
+def run_ccm_bootstraps(cname, ename, embedding, cause, L, theiler_window, n_bootstraps, db, rng):
     assert isinstance(embedding, pyembedding.Embedding)
 
     corrs = []
 
-    for i in range(N_CCM_BOOTSTRAPS):
+    for i in range(n_bootstraps):
         sampled_embedding = embedding.sample_embedding(L, replace=True, rng=rng)
         ccm_result, y_actual, y_pred = sampled_embedding.ccm(embedding, cause, theiler_window=theiler_window)
 
-        corrs.append(ccm_result.correlation)
+        corrs.append(ccm_result['correlation'])
 
     corrs = numpy.array(corrs)
 
@@ -338,7 +287,7 @@ def run_ccm_bootstraps(cname, ename, embedding, cause, L, theiler_window):
     db.execute(
         'INSERT INTO ccm_correlation_dist VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
         [cname, ename, L, str(embedding.delays), corrs.mean(), corrs.std(), statutils.inverse_quantile(corrs, 0.0).tolist()] +
-            numpy.percentile(corrs, [0, 1, 2.5, 5, 25, 50, 75, 95, 97.5, 99, 100]).tolist()
+            [x for x in numpy.percentile(corrs, [0, 1, 2.5, 5, 25, 50, 75, 95, 97.5, 99, 100])]
     )
     
     db.execute('CREATE TABLE IF NOT EXISTS ccm_correlations (cause, effect, L, delays, correlation)')
@@ -361,7 +310,7 @@ def plot_timeseries(series, labels, xlabel, ylabel, filename):
     pyplot.savefig(filename)
     pyplot.close(fig)
 
-def write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates_tup):
+def write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates_tup, db):
     fig = pyplot.figure(figsize=(10, 5*len(derivs_tup)))
 
     db.execute('CREATE TABLE IF NOT EXISTS nichkawde_metrics (delays, geo_mean_derivs, fnn_rates)')
@@ -389,5 +338,9 @@ def write_and_plot_nichkawde_metrics(cname, ename, delays, derivs_tup, fnn_rates
         pyplot.ylabel('FNN rate')
     pyplot.savefig('nichkawde-{0}-causes-{1}.png'.format(cname, ename))
     pyplot.close(fig)
+
+def load_json(filename):
+    with open(filename) as f:
+        return json.load(f, object_pairs_hook=OrderedDict)
 
 main()
