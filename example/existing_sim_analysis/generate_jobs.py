@@ -9,6 +9,9 @@ import json
 
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 
+sys.path.append(os.path.join(SCRIPT_DIR, 'pyembedding'))
+import uzalcost
+
 # Simulations database: make sure this is an absolute path
 #SIM_DB_PATH = '/Users/ebaskerv/uchicago/midway_cobey/ccmproject-storage/2015-10-23-simulations/results_gathered.sqlite'
 SIM_DB_PATH = '/project/cobey/ccmproject-storage/2015-10-23-simulations/results_gathered.sqlite'
@@ -98,7 +101,11 @@ def main():
     if not os.path.exists(SIM_DB_PATH):
         sys.stderr.write('simulations DB not present; aborting.\n')
         sys.exit(1)
-
+    
+    # Make sure uzal costfunc binary has been built
+    sys.stderr.write('Ensuring costfunc binary has been built...\n')
+    uzalcost.set_up_uzal_costfunc()
+    
     with sqlite3.connect(SIM_DB_PATH) as db:
         for job_id, job_subdir, eps, beta00, sigma01, sd_proc, replicate_id, random_seed in db.execute(
             'SELECT * FROM job_info WHERE replicate_id < ?', [N_REPLICATES]
