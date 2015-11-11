@@ -3,7 +3,7 @@
 import os
 SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
 import sys
-#sys.path.append(os.path.join(SCRIPT_DIR, 'pyembedding'))
+sys.path.append(os.path.join(SCRIPT_DIR, 'pyembedding'))
 import sqlite3
 import numpy
 import matplotlib
