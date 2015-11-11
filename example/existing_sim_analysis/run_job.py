@@ -52,6 +52,12 @@ def main():
     # Set up RNG
     rng = numpy.random.RandomState(job_info['random_seed'])
     X = load_simulation(sim_db_path, job_id, ccm_settings)
+    if numpy.any(numpy.logical_or(
+        numpy.isnan(X),
+        numpy.isinf(X)
+    )):
+        sys.stderr.write('nans or infs in data; skipping all analyses.\n')
+        sys.exit(0)
     
     x0 = X[:,0]
     x1 = X[:,1]
