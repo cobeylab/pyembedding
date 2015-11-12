@@ -111,9 +111,9 @@ def get_mean_rho(cause, effect, eps, beta00, sigma01, sd_proc):
 def plot_heatmap(mat, xlabel, xticks, ylabel, yticks, vmin=0, vmax=1):
     pyplot.imshow(mat, origin='lower', vmin=vmin, vmax=vmax, interpolation='none')
     
-    pyplot.xticks(range(mat.shape[0]), xticks)
+    pyplot.xticks(range(mat.shape[1]), xticks)
     pyplot.xlabel(xlabel)
-    pyplot.yticks(range(mat.shape[1]), yticks)
+    pyplot.yticks(range(mat.shape[0]), yticks)
     pyplot.ylabel(ylabel)
     
     pyplot.colorbar()
