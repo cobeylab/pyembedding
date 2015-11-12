@@ -218,14 +218,10 @@ def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_
     max_corr = float('-inf')
     max_corr_Etau = None
     for E in ccm_settings['sweep_embedding_dimensions']:
-        last_corr = None
-        decrease_count = None
+        max_corr_this_E = float('-inf')
+        max_corr_tau_this_E = None
         
         for tau in (ccm_settings['sweep_delays'] if E > 1 else [1]):
-            if decrease_count > 10:
-                sys.stderr.write('  10 decreases in a row; assuming found max\n')
-                break
-            
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect[:-1], delays)
             if embedding.delay_vector_count < embedding.embedding_dimension + 2:
@@ -243,14 +239,13 @@ def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_
                 max_corr = corr
                 max_corr_Etau = (E, tau)
             
-            if last_corr is None:
-                decrease_count = 0
-            else:
-                if corr < last_corr:
-                    decrease_count += 1
-                else:
-                    decrease_count = 0
-            last_corr = corr
+            if corr > max_corr_this_E:
+                max_corr_this_E = corr
+                max_corr_tau_this_E = tau
+            
+            if tau - max_corr_tau_this_E >= 12:
+                sys.stderr.write('12 taus since a maximum for this E; assuming found.\n')
+                break
     
     E, tau = max_corr_Etau
     delays = tuple(range(0, E*tau, tau))
