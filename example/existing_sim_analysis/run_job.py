@@ -250,7 +250,7 @@ def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_
                     max_corr_this_E = corr
                     max_corr_tau_this_E = tau
             
-                if tau - max_corr_tau_this_E >= delta_tau_termination:
+                if E * (tau - max_corr_tau_this_E) >= delta_tau_termination:
                     sys.stderr.write('{} taus since a maximum for this E; assuming found.\n'.format(delta_tau_termination))
                     break
     
