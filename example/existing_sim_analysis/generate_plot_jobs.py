@@ -53,7 +53,7 @@ def get_plot_settings():
     return locals()
 
 RUNMANY_INFO_TEMPLATE = OrderedDict([
-    ('executable', os.path.join(SCRIPT_DIR, 'run_job.py')),
+    ('executable', os.path.join(SCRIPT_DIR, 'run_plot_job.py')),
     ('minutes', 30),
     ('megabytes', 2000),
     ('simulation_db_path', SIM_DB_PATH),
