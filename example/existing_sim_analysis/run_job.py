@@ -215,11 +215,17 @@ def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window, db, rn
     run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window, ccm_settings['n_ccm_bootstraps'], db, rng)
 
 def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_window, db, rng, ccm_settings):
+    if 'delta_tau_termination' in ccm_settings:
+        delta_tau_termination = ccm_settings['delta_tau_termination']
+    else:
+        delta_tau_termination = None
+    
     max_corr = float('-inf')
     max_corr_Etau = None
     for E in ccm_settings['sweep_embedding_dimensions']:
-        max_corr_this_E = float('-inf')
-        max_corr_tau_this_E = None
+        if delta_tau_termination is not None:
+            max_corr_this_E = float('-inf')
+            max_corr_tau_this_E = None
         
         for tau in (ccm_settings['sweep_delays'] if E > 1 else [1]):
             delays = tuple(range(0, E*tau, tau))
@@ -239,13 +245,14 @@ def run_analysis_max_univariate_prediction(cname, cause, ename, effect, theiler_
                 max_corr = corr
                 max_corr_Etau = (E, tau)
             
-            if corr > max_corr_this_E:
-                max_corr_this_E = corr
-                max_corr_tau_this_E = tau
+            if delta_tau_termination is not None:
+                if corr > max_corr_this_E:
+                    max_corr_this_E = corr
+                    max_corr_tau_this_E = tau
             
-            if tau - max_corr_tau_this_E >= 12:
-                sys.stderr.write('12 taus since a maximum for this E; assuming found.\n')
-                break
+                if tau - max_corr_tau_this_E >= delta_tau_termination:
+                    sys.stderr.write('{} taus since a maximum for this E; assuming found.\n'.format(delta_tau_termination))
+                    break
     
     E, tau = max_corr_Etau
     delays = tuple(range(0, E*tau, tau))
