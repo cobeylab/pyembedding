@@ -198,6 +198,10 @@ def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window, db, rn
     max_corr_emb = None
     max_corr_Etau = None
     for E in ccm_settings['sweep_embedding_dimensions']:
+        if delta_tau_termination is not None:
+            max_corr_this_E = float('-inf')
+            max_corr_tau_this_E = None
+        
         for tau in (ccm_settings['sweep_delays'] if E > 1 else [1]):
             delays = tuple(range(0, E*tau, tau))
             embedding = pyembedding.Embedding(effect, delays=delays)
@@ -211,6 +215,15 @@ def run_analysis_max_ccm_rho(cname, cause, ename, effect, theiler_window, db, rn
                 max_corr = corr
                 max_corr_emb = embedding
                 max_corr_Etau = (E, tau)
+            
+            if delta_tau_termination is not None:
+                if corr > max_corr_this_E:
+                    max_corr_this_E = corr
+                    max_corr_tau_this_E = tau
+            
+                if E * (tau - max_corr_tau_this_E) >= delta_tau_termination:
+                    sys.stderr.write('{} taus since a maximum for this E; assuming found.\n'.format(delta_tau_termination))
+                    break
     sys.stderr.write('  Using E={}, tau = {}\n'.format(*max_corr_Etau))
     run_analysis_for_embedding(cname, cause, ename, effect, max_corr_emb, theiler_window, ccm_settings['n_ccm_bootstraps'], db, rng)
 
