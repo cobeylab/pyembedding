@@ -175,6 +175,6 @@ for seasonal in (0, 1):
         plot_positive_positive_rate('C1', 'C0', seasonal, different)
         
         pyplot.suptitle('{}, {}'.format(seas_label, diff_label))
-        pyplot.savefig('positive_rate_{}_{}.png'.format(seas_label, diff_label))
+        pyplot.savefig('{}_{}.png'.format(seas_label, diff_label))
 
 db.close()
