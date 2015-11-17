@@ -1,0 +1,167 @@
+<html>
+
+<head>
+
+<script>
+
+var get_node_by_id = function(id)
+{
+	return document.getElementById(id);
+};
+
+var create_node = function(tag, attrs, inner_html)
+{
+	var new_node = document.createElement(tag);
+	if(attrs) {
+		for(var key in attrs) {
+			new_node.setAttribute(key, attrs[key]);
+		}
+	}
+	if(inner_html) {
+		new_node.innerHTML = inner_html;
+	}
+	return new_node;
+};
+
+var remove_all_children = function(node)
+{
+	while(node.lastChild) {
+		node.removeChild(node.lastChild);
+	}
+}
+
+var server_port = window.location.href.split('port=')[1];
+if(server_port === undefined) {
+    server_port = null;
+    document.write('Error: server port not defined. Must be run using plot_gcdynamics.py.');
+}
+
+var get_query = function(query, args, handler, asynchronous)
+{
+    var xhr = new XMLHttpRequest();
+    xhr.onreadystatechange = function() {
+        if(xhr.readyState == 4) {
+            if(handler !== null) {
+                response_obj = JSON.parse(xhr.response);
+                handler(response_obj['columns'], response_obj['rows'], response_obj['exception']);
+            }
+        }
+    }
+    xhr.open('POST', 'http://localhost:' + server_port, asynchronous);
+    xhr.send(JSON.stringify({
+        query : query,
+        args : args
+    }));
+    if(!asynchronous) {
+        return JSON.parse(xhr.response);
+    }
+}
+
+var results_to_dataframe_object = function(rows, columns)
+{
+    obj = {}
+    for(var j = 0; j < columns.length; j++) {
+        obj[columns[j]] = [];
+        for(var i = 0; i < rows.length; i++) {
+            obj[columns[j]].append(rows[i][j]);
+        }
+    }
+    return obj;
+}
+
+var row_to_object = function(row, columns)
+{
+    obj = {};
+    for(var i = 0; i < columns.length; i++) {
+        obj[columns[i]] = row[i];
+    }
+    return obj;
+}
+
+window.onload = function() {
+    //document.body.appendChild(create_node('p', null, 'Loading...'));
+    window.setTimeout(initialize, 0);
+};
+
+var initialize = function()
+{
+    var success = true;
+    
+    var eps_vals = get_parameter_values('eps');
+    var beta00_vals = get_parameter_values('beta00');
+    var sigma01_vals = get_parameter_values('sigma01');
+    var sd_proc_vals = get_parameter_values('sd_proc');
+    
+    if(success) {
+        var popup_outer_div = create_node('div');
+        
+        popup_outer_div.appendChild(create_param_popup('eps', eps_vals, 1));
+        popup_outer_div.appendChild(create_param_popup('beta00', beta00_vals, 2));
+        popup_outer_div.appendChild(create_param_popup('sigma01', sigma01_vals, 2));
+        popup_outer_div.appendChild(create_param_popup('sd_proc', sd_proc_vals, 6));
+        popup_outer_div.appendChild(create_param_popup('years', [10, 100, 1000]));
+        
+        popup_outer_div.appendChild(create_checkbox('log_transform'));
+        popup_outer_div.appendChild(create_checkbox('use_first_difference'));
+        
+        document.body.appendChild(popup_outer_div);
+        
+        var plot_canvas = create_plot_canvas();
+        document.body.appendChild(plot_canvas);
+    }
+    else {
+        document.body.appendChild(create_node('p', null, 'Loading failed.'));
+    }
+}
+
+/*** PLOTTING ***/
+
+/*** DATA LOADING ***/
+
+/**
+    Get parameter values
+*/
+var get_parameter_values = function(param_name)
+{
+    query = 'SELECT DISTINCT ' + param_name + ' FROM job_info' + ' ORDER BY ' + param_name;
+    obj = get_query(query, [], null, false);
+    vals = [];
+    for(var i = 0; i < obj.rows.length; i++) {
+        vals[i] = obj.rows[i][0];
+    }
+    return vals;
+};
+
+var create_param_popup = function(param_name, param_vals, precision)
+{
+    var popup_div = create_node('div');
+    
+    var popup_label = create_node('label', null, param_name);
+    popup_div.appendChild(popup_label);
+    
+    var popup_node = create_node('select', {'id' : param_name + '_popup', name : param_name});
+    for(var i = 0; i < param_vals.length; i++) {
+        option_node = create_node('option', {'value' : param_vals[i]}, param_vals[i].toFixed(precision));
+        popup_node.appendChild(option_node);
+    }
+    popup_div.appendChild(popup_node)
+    
+    return popup_div;
+};
+
+var create_checkbox = function(name)
+{
+    var checkbox_div = create_node('div');
+    checkbox_div.appendChild(create_node('input', {'type' : 'checkbox', 'id' : name + '_checkbox'}));
+    checkbox_div.appendChild(create_node('label', {'for' : name + '_checkbox'}, name));
+    return checkbox_div;
+}
+
+</script>
+
+</head>
+
+<body>
+</body>
+
+</html>
