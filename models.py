@@ -5,6 +5,7 @@ import json
 import random
 from math import sin, pi, log, exp, sqrt, floor, ceil, log1p, isnan
 from collections import OrderedDict
+import numpy
 
 class ExecutionException(Exception):
     def __init__(self, cause, stdout_data, stderr_data):
@@ -34,6 +35,61 @@ def run_via_pypy(model_name, params):
         return jsonobject.load_from_string(stdout_data)
     except Exception as e:
         raise ExecutionException(e, stdout_data, stderr_data)
+
+def sugihara_mirage_correlation(t_max=200, rx=3.8, ry=3.5, Bxy=0.02, Byx=0.1, x0=0.4, y0=0.2):
+    '''From Figure 1 in Sugihara et al. Science 2010.'''
+    x = numpy.zeros(t_max + 1, dtype=float)
+    x[0] = x0
+    y = numpy.zeros(t_max + 1, dtype=float)
+    y[0] = y0
+    
+    for t in range(t_max):
+        x[t + 1] = x[t] * (rx - rx * x[t] - Bxy * y[t])
+        y[t + 1] = y[t] * (ry - ry * y[t] - Byx * x[t])
+    
+    return x, y
+
+def sugihara_example1(
+    rng,
+    t_max=1000, burnin=200, r1=3.1, D1=3, Sa1=0.4, r2=2.9, D2=3, Sa2=0.35,
+    noiseparam=1, psi=0.3
+):
+    n1series = numpy.zeros(t_max + burnin + 1, dtype=float)
+    n2series = numpy.zeros(t_max + burnin + 1, dtype=float)
+    redseries = numpy.zeros(t_max + burnin + 1, dtype=float)
+    
+    def schaffer(nt, Tt, r, psi):
+        return nt * (r * (1.0 - nt)) * numpy.exp(psi * Tt)
+    
+    def step_annual(nt0, ntD, TtD, Sa, r, psi):
+        return nt0 * Sa + max(schaffer(ntD, TtD, r, psi), 0.0)
+    
+    n1series[:max(D1, D2)+1] = 0.5 * rng.uniform(0, 1, size=max(D1, D2)+1)
+    n2series[:max(D1, D2)+1] = 0.5 * rng.uniform(0, 1, size=max(D1, D2)+1)
+    whiteseries = -rng.uniform(0, 1, size=redseries.shape) + 0.5
+    
+    assert numpy.all(n1series >= 0.0)
+    assert numpy.all(n2series >= 0.0)
+    
+    for i in range(redseries.shape[0]):
+        if i >= noiseparam:
+            redseries[i] = numpy.mean(whiteseries[i - noiseparam : i])
+        else:
+            redseries[i] = 0.0
+    
+    pseries = (redseries - numpy.mean(redseries)) / numpy.std(redseries)
+    
+    for i in range(max(D1, D2) + 1, n1series.shape[0]):
+        n1series[i] = step_annual(n1series[i-1], n1series[i-1-D1], pseries[i-1-D1], Sa1, r1, psi)
+        n2series[i] = step_annual(n2series[i-1], n2series[i-1-D2], pseries[i-1-D2], Sa2, r2, 1.2 * psi)
+        
+        if n1series[i] < 0.0 or n2series[i] < 0.0:
+            print n1series[i], n2series[i]
+        
+        assert n1series[i] > 0.0
+        assert n2series[i] > 0.0
+    
+    return n1series[burnin:], n2series[burnin:], pseries[burnin:]
 
 def multistrain_sde(
     random_seed=None,
