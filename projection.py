@@ -485,19 +485,8 @@ class ProjectionEmbedding:
     delay_vector_count = property(get_delay_vector_count)
 
 
-def tajima_cross_embedding(cause, effect, theiler_window, dmax, neighbor_count = None, corr_threshold = 1.00, return_metrics = False, rng = numpy.random):
+def tajima_cross_embedding(cause, effect, theiler_window, neighbor_count = None, corr_threshold = 1.00, rng = numpy.random):
     '''
-
-    :param cause:
-    :param effect:
-    :param theiler_window:
-    :param max_embedding_dimension:
-    :param neighbor_count:
-    :param corr_threshold:
-    :param return_metrics:
-    :param rng:
-    :return:
-
     >>> x = numpy.random.normal(0, 1, size=1000)
     >>> y = numpy.random.normal(0, 1, size=1000)
     >>> emb_xy = tajima_cross_embedding(x, y, 10, 20)
@@ -510,21 +499,50 @@ def tajima_cross_embedding(cause, effect, theiler_window, dmax, neighbor_count =
     assert len(cause.shape) == 1
     assert len(effect.shape) == 1
     assert cause.shape[0] == effect.shape[0]
+    
+    dmax = 16
+    max_dmax = int(effect.shape[0] / 2)
+    
+    max_corr_all_dmax = None
+    max_corr_dmax_all_dmax = None
+    max_corr_d_all_dmax = None
+    pm_all_dmax = None
+    corrs_all_dmax = None
+    
+    while dmax <= max_dmax:
+        sys.stderr.write('dmax = {}\n'.format(dmax))
+        projection_matrix = rng.normal(0.0, 1.0, size=(dmax, dmax))
+        
+        corrs = numpy.zeros(dmax, dtype=float)
+        for d in range(1, dmax + 1):
+            pm_d = projection_matrix[:d, :]
+            emb_d = ProjectionEmbedding(effect, dmax, d, projection_mat=pm_d)
 
-    projection_matrix = rng.normal(0.0, 1.0, size=(dmax, dmax))
+            ccm_result, y_actual, y_pred = emb_d.ccm(emb_d, cause, neighbor_count=neighbor_count, theiler_window=theiler_window)
+            corrs[d-1] = ccm_result['correlation']
+            sys.stderr.write('d = {}, corr = {}\n'.format(d, corrs[d-1]))
+        
+        max_corr_d = numpy.argmax(corrs) + 1
+        max_corr = numpy.max(corrs)
+        
+        if max_corr_all_dmax is None or max_corr > max_corr_all_dmax:
+            max_corr_all_dmax = max_corr
+            max_corr_dmax_all_dmax = dmax
+            max_corr_d_all_dmax = max_corr_d
+            pm_all_dmax = projection_matrix
+            corrs_all_dmax = corrs
+            
+            dmax *= 2
+        else:
+            break
+    
+    sys.stderr.write('best dmax, d: {}, {}\n'.format(max_corr_dmax_all_dmax, max_corr_d_all_dmax))
+    
+    threshold_corr = corr_threshold * max_corr_all_dmax
+    corr_d = numpy.argmax(corrs_all_dmax >= threshold_corr) + 1
+    corr = corrs_all_dmax[corr_d - 1]
+    
+    pm = pm_all_dmax[:corr_d,:]
+    sys.stderr.write('min d >= threshold: d = {}, corr = {}\n'.format(corr_d, corr))
 
-    corrs = numpy.zeros(dmax, dtype=float)
-    for d in range(1, dmax + 1):
-        pm_d = projection_matrix[:d, :]
-        emb_d = ProjectionEmbedding(effect, dmax, d, projection_mat=pm_d)
-
-        ccm_result, y_actual, y_pred = emb_d.ccm(emb_d, cause, theiler_window=theiler_window)
-        corrs[d-1] = ccm_result['correlation']
-        sys.stderr.write('d = {}, corr = {}\n'.format(d, corrs[d-1]))
-
-    max_corr_d = numpy.argmax(corrs) + 1
-    max_corr = numpy.max(corrs)
-    pm = projection_matrix[:max_corr_d,:]
-    sys.stderr.write('max: d = {}, corr = {}\n'.format(numpy.argmax(corrs) + 1, numpy.max(corrs)))
-
-    return ProjectionEmbedding(effect, dmax, max_corr_d, projection_mat=pm)
+    return ProjectionEmbedding(effect, max_corr_dmax_all_dmax, corr_d, projection_mat=pm)
