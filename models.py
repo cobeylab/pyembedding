@@ -111,7 +111,7 @@ def multistrain_sde(
     eps=None,
     sigma=None,
     
-    shared_proc=False,
+    corr_proc=None,
     sd_proc=None,
     
     shared_obs=False,
@@ -161,10 +161,13 @@ def multistrain_sde(
             logR = [neg_inf if R[i] == 0 else log(R[i]) for i in pathogen_ids]
         
         if stochastic:
-            if shared_proc:
+            if corr_proc == 1.0:
                 noise = [rng.gauss(0.0, 1.0)] * n_pathogens
             else:
                 noise = [rng.gauss(0.0, 1.0) for i in pathogen_ids]
+                if corr_proc > 0.0:
+                    assert n_pathogens == 2
+                    noise[1] = corr_proc * noise[0] + sqrt(1 - corr_proc*corr_proc) * noise[1]
             for i in pathogen_ids:
                 noise[i] *= sd_proc[i]
         
