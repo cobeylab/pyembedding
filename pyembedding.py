@@ -9,6 +9,7 @@ import numpy
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 from collections import OrderedDict
+import multiprocessing
 
 # def find_theiler_window(x):
 #     for j in range(x.shape[0]):
@@ -119,7 +120,6 @@ class Embedding:
                 continue
             delay_vector = numpy.array([self.x[i - delay] for delay in self.delays])
             if numpy.any(numpy.logical_or(numpy.isnan(delay_vector), numpy.isinf(delay_vector))):
-                sys.stderr.write('Warning: found nan or inf at index {0}; leaving out'.format(i))
                 continue
             t_list.append(i)
             embedding_list.append(delay_vector)
@@ -132,7 +132,7 @@ class Embedding:
             self.embedding_mat = numpy.array(embedding_list)
             assert self.embedding_mat.shape[1] == len(self.delays)
 
-    def sample_embedding(self, n, replace=True, rng=numpy.random):
+    def sample_embedding(self, n, match_valid_vec=None, replace=True, rng=numpy.random):
         '''
         >>> a = Embedding([1, 2, 3, 4], delays=(0, 1))
         >>> b = a.sample_embedding(2, replace=False)
@@ -156,8 +156,13 @@ class Embedding:
         assert n > 0
         if replace == False:
             assert n < self.embedding_mat.shape[0]
-
-        inds = rng.choice(self.embedding_mat.shape[0], size=n, replace=replace)
+        
+        if match_valid_vec is not None:
+            valid_ind_mask = numpy.logical_not(numpy.isnan(match_valid_vec))[self.t]
+            valid_inds = numpy.arange(self.embedding_mat.shape[0])[valid_ind_mask]
+            inds = rng.choice(valid_inds, size=n, replace=replace)
+        else:
+            inds = rng.choice(self.embedding_mat.shape[0], size=n, replace=replace)
 
         return Embedding(self.x, self.delays, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds])
 
@@ -426,26 +431,14 @@ class Embedding:
         )
 
     def ccm(self, query_embedding, y_full, neighbor_count=None, theiler_window=1, use_kdtree=True):
-
+        return self.simplex_predict_summary(query_embedding, y_full, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree)
+    
+    def simplex_predict_summary(self, query_embedding, y_full, neighbor_count=None, theiler_window=1, use_kdtree=True):
         y_actual, y_pred = self.simplex_predict_using_embedding(
             query_embedding, y_full, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree
-        )
-        invalid = numpy.isnan(y_pred)
-        valid = numpy.logical_not(invalid)
-        valid_count = valid.sum()
-
-        sd_actual = numpy.std(y_actual[valid])
-        sd_pred = numpy.std(y_pred[valid])
-
-        if valid_count == 0:
-            corr = float('nan')
-        elif sd_actual == 0 and sd_pred == 0:
-            corr = 1.0
-        elif sd_actual == 0 or sd_pred == 0:
-            corr = 0.0
-        else:
-            corr = numpy.corrcoef(y_actual[valid], y_pred[valid])[0,1]
-
+        )   
+        corr, valid_count, sd_actual, sd_pred = correlation_valid(y_actual, y_pred)
+        
         return OrderedDict([
             ('correlation', corr),
             ('valid_count', valid_count),
@@ -675,6 +668,82 @@ def nichkawde_embedding(x, theiler_window, max_embedding_dimension, fnn_rtol=10,
     if return_metrics:
         return Embedding(x, delays), tuple(derivs_list), tuple(fnn_rates_list)
     return Embedding(x, delays)
+
+def correlation_valid(x, y):
+    invalid = numpy.logical_or(numpy.isnan(x), numpy.isnan(y))
+    valid = numpy.logical_not(invalid)
+    valid_count = valid.sum()
+
+    if valid_count == 0:
+        corr = float('nan')
+        sd_x = float('nan')
+        sd_y = float('nan')
+    else:
+        sd_x = numpy.std(x[valid])
+        sd_y = numpy.std(y[valid])
+        
+        if sd_x == 0 and sd_y == 0:
+            corr = 1.0
+        elif sd_x == 0 or sd_y == 0:
+            corr = 0.0
+        else:
+            corr = numpy.corrcoef(x[valid], y[valid])[0,1]
+    
+    return corr, valid_count, sd_x, sd_y
+
+def identify_embedding_max_univariate_prediction(x, Etau_list, dt, cores=1, corr_threshold=1.00, lib_threshold=0.75):
+    pool = multiprocessing.Pool(cores)
+    args = [(x, E, tau, dt) for E, tau in Etau_list]
+    
+    async_result = pool.map_async(univariate_predict_mappable, args, chunksize=1)
+    try:
+        # Need a timeout to avoid KeyboardInterrupt Python bug; a million years should be safe
+        results = async_result.get(60*60*24*365*1000*1000)
+    except KeyboardInterrupt:
+        pool.terminate()
+        pool.join()
+        sys.stdout.write('\n')
+    
+    corrs = numpy.array([x[0] for x in results])
+    Ls = numpy.array([x[1] for x in results])
+    
+    if numpy.isnan(corrs).sum() == corrs.shape[0]:
+        return None, None, corrs
+    
+    corrs[numpy.isnan(corrs)] = -2.0
+    
+    Lmax = numpy.max(Ls)
+    goodenough_L = lib_threshold * Lmax
+    
+    corrs[Ls < goodenough_L] = -2.0
+    
+    max_corr = numpy.max(corrs)
+    assert max_corr != -2.0
+    if max_corr < 0.0:
+        return None, None, corrs
+    
+    goodenough_corr = max_corr * corr_threshold
+    print goodenough_corr
+    goodenough_corr_index = numpy.argmax(
+        corrs >= goodenough_corr
+    )
+    E, tau = Etau_list[goodenough_corr_index]
+    print E, tau, Ls[goodenough_corr_index], max(Ls)
+    
+    pool.terminate()
+    
+    return E, tau, corrs
+
+def univariate_predict_mappable(args):
+    x, E, tau, dt = args
+    
+    delays = tuple(range(0, E*tau, tau))
+    emb = Embedding(x[:-1], delays)
+    if emb.delay_vector_count < emb.embedding_dimension + 2:
+        return E, tau, float('nan')
+    
+    result, x_off_actual, x_off_pred = emb.simplex_predict_summary(emb, x[1:], theiler_window=dt)
+    return result['correlation'], emb.delay_vector_count
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
