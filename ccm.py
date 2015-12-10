@@ -28,6 +28,8 @@ def main():
     dt = args.temporal_separation
     
     max_lag = args.max_cross_map_lag
+    lag_skip = args.lag_skip
+    
     n_bootstraps = args.bootstraps
     
     cores = args.cores
@@ -63,7 +65,7 @@ def main():
                     continue
                 
                 sys.stderr.write('Running {}, {}\n'.format(cname, ename))
-                run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, n_bootstraps, cores)
+                run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip, n_bootstraps, cores)
 
 def identify_Etau(db, data, Emin, Emax, taumin, taumax, dt, cores):
     assert Emin > 0
@@ -94,14 +96,15 @@ def identify_Etau_single(x, Etau_list, dt, cores):
     
     return E, tau
 
-def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, n_bootstraps, cores):
+def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip, n_bootstraps, cores):
 #     
 #     L = args.library_size
 #     assert L is None
     
     pool = multiprocessing.Pool(cores)
     
-    args = [(cause, effect, E, tau, dt, lag, n_bootstraps) for lag in range(-max_lag, max_lag + 1)]
+    lag_range = range(-max_lag, -lag_skip + 1, lag_skip) + range(0, max_lag + 1, lag_skip)
+    args = [(cause, effect, E, tau, dt, lag, n_bootstraps) for lag in lag_range]
     
     async_result = pool.map_async(run_analysis_mappable, args, chunksize=1)
     try:
@@ -321,7 +324,12 @@ def parse_arguments():
     )
     
     parser.add_argument(
-        '--max-cross-map-lag', '-xlag', metavar='<max-cross-map-lag>', type=int, default=5,
+        '--max-cross-map-lag', '-maxlag', metavar='<max-cross-map-lag>', type=int, default=5,
+        help='Maximum cross-map lag.'
+    )
+    
+    parser.add_argument(
+        '--cross-map-lag-skip', '-lagskip', metavar='<max-cross-map-lag>', type=int, default=5,
         help='Maximum cross-map lag.'
     )
     
