@@ -28,7 +28,7 @@ def main():
     dt = args.temporal_separation
     
     max_lag = args.max_cross_map_lag
-    lag_skip = args.lag_skip
+    lag_skip = args.cross_map_lag_skip
     
     n_bootstraps = args.bootstraps
     
