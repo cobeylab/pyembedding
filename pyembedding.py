@@ -160,6 +160,10 @@ class Embedding:
         if match_valid_vec is not None:
             valid_ind_mask = numpy.logical_not(numpy.isnan(match_valid_vec))[self.t]
             valid_inds = numpy.arange(self.embedding_mat.shape[0])[valid_ind_mask]
+            
+            if valid_inds.shape[0] == 0:
+                return None
+            
             inds = rng.choice(valid_inds, size=n, replace=replace)
         else:
             inds = rng.choice(self.embedding_mat.shape[0], size=n, replace=replace)
@@ -723,12 +727,10 @@ def identify_embedding_max_univariate_prediction(x, Etau_list, dt, cores=1, corr
         return None, None, corrs
     
     goodenough_corr = max_corr * corr_threshold
-    print goodenough_corr
     goodenough_corr_index = numpy.argmax(
         corrs >= goodenough_corr
     )
     E, tau = Etau_list[goodenough_corr_index]
-    print E, tau, Ls[goodenough_corr_index], max(Ls)
     
     pool.terminate()
     

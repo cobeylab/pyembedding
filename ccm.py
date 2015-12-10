@@ -115,6 +115,8 @@ def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip,
         pool.join()
         sys.stdout.write('\n')
     
+#     results = map(run_analysis_mappable, args)
+    
     db.execute('CREATE TABLE IF NOT EXISTS correlations (cause, effect, lag, L, correlation)')
     db.execute('CREATE TABLE IF NOT EXISTS tests (cause, effect, lag, Lmin, Lmax, pval_positive, pval_increase)')
     db.execute('CREATE TABLE IF NOT EXISTS lagtests (cause, effect, best_lag, pval_positive, pval_increase, pval_neg_best, pval_nonpos_best)')
@@ -143,6 +145,9 @@ def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip,
         
         corrs_Lmin = results_dict[Lmin]
         corrs_Lmax = results_dict[Lmax]
+        
+        if corrs_Lmin is None or corrs_Lmax is None:
+            continue
         
         pval_positive = statutils.inverse_quantile(corrs_Lmax, 0.0).tolist()
         pval_increase = 1.0 - numpy.mean(statutils.inverse_quantile(corrs_Lmin, corrs_Lmax))
@@ -180,58 +185,61 @@ def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip,
                     'INSERT INTO correlations VALUES (?,?,?,?,?)',
                     [cname, ename, lag, L, corr]
                 )
+    try:
+        # Get the best negative-or-zero lag
+        if best_lag_neg_corr_med > zero_corr_med:
+            best_lag_nonpos = best_lag_neg
+            best_lag_nonpos_corrs = best_lag_neg_corrs
+            best_lag_nonpos_corr_med = best_lag_neg_corr_med
+            best_lag_nonpos_pval_increase = best_lag_neg_pval_increase
+            best_lag_nonpos_pval_positive = best_lag_neg_pval_positive
+        else:
+            best_lag_nonpos = 0
+            best_lag_nonpos_corrs = zero_corrs
+            best_lag_nonpos_corr_med = zero_corr_med
+            best_lag_nonpos_pval_increase = zero_pval_increase
+            best_lag_nonpos_pval_positive = zero_pval_positive
     
-    # Get the best negative-or-zero lag
-    if best_lag_neg_corr_med > zero_corr_med:
-        best_lag_nonpos = best_lag_neg
-        best_lag_nonpos_corrs = best_lag_neg_corrs
-        best_lag_nonpos_corr_med = best_lag_neg_corr_med
-        best_lag_nonpos_pval_increase = best_lag_neg_pval_increase
-        best_lag_nonpos_pval_positive = best_lag_neg_pval_positive
-    else:
-        best_lag_nonpos = 0
-        best_lag_nonpos_corrs = zero_corrs
-        best_lag_nonpos_corr_med = zero_corr_med
-        best_lag_nonpos_pval_increase = zero_pval_increase
-        best_lag_nonpos_pval_positive = zero_pval_positive
+        # Get the best positive-or-zero lag
+        if best_lag_pos_corr_med > zero_corr_med:
+            best_lag_nonneg = best_lag_pos
+            best_lag_nonneg_corrs = best_lag_pos_corrs
+            best_lag_nonneg_corr_med = best_lag_pos_corr_med
+            best_lag_nonneg_pval_increase = best_lag_pos_pval_increase
+            best_lag_nonneg_pval_positive = best_lag_pos_pval_positive
+        else:
+            best_lag_nonneg = 0
+            best_lag_nonneg_corrs = zero_corrs
+            best_lag_nonneg_corr_med = zero_corr_med
+            best_lag_nonneg_pval_increase = zero_pval_increase
+            best_lag_nonneg_pval_positive = zero_pval_positive
     
-    # Get the best positive-or-zero lag
-    if best_lag_pos_corr_med > zero_corr_med:
-        best_lag_nonneg = best_lag_pos
-        best_lag_nonneg_corrs = best_lag_pos_corrs
-        best_lag_nonneg_corr_med = best_lag_pos_corr_med
-        best_lag_nonneg_pval_increase = best_lag_pos_pval_increase
-        best_lag_nonneg_pval_positive = best_lag_pos_pval_positive
-    else:
-        best_lag_nonneg = 0
-        best_lag_nonneg_corrs = zero_corrs
-        best_lag_nonneg_corr_med = zero_corr_med
-        best_lag_nonneg_pval_increase = zero_pval_increase
-        best_lag_nonneg_pval_positive = zero_pval_positive
+        # Test if negative is better than nonnegative
+        pval_neg_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_nonneg_corrs, best_lag_neg_corrs))
     
-    # Test if negative is better than nonnegative
-    pval_neg_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_nonneg_corrs, best_lag_neg_corrs))
+        # Test if nonpositive is better than positive
+        pval_nonpos_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_pos_corrs, best_lag_nonpos_corrs))
     
-    # Test if nonpositive is better than positive
-    pval_nonpos_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_pos_corrs, best_lag_nonpos_corrs))
-    
-    if best_lag_neg_corr_med > best_lag_pos_corr_med and best_lag_neg_corr_med > zero_corr_med:
-        best_lag = best_lag_neg
-        pval_increase = best_lag_neg_pval_increase
-        pval_positive = best_lag_neg_pval_positive
-    elif best_lag_pos_corr_med > best_lag_neg_corr_med and best_lag_pos_corr_med > zero_corr_med:
-        best_lag = best_lag_pos
-        pval_increase = best_lag_pos_pval_increase
-        pval_positive = best_lag_pos_pval_positive
-    else:
-        best_lag = 0
-        pval_increase = zero_pval_increase
-        pval_positive = zero_pval_positive
-    
-    db.execute(
-        'INSERT INTO lagtests VALUES (?,?,?,?,?,?,?)',
-        [cname, ename, best_lag, pval_positive, pval_increase, pval_neg_best, pval_nonpos_best]
-    )
+        if best_lag_neg_corr_med > best_lag_pos_corr_med and best_lag_neg_corr_med > zero_corr_med:
+            best_lag = best_lag_neg
+            pval_increase = best_lag_neg_pval_increase
+            pval_positive = best_lag_neg_pval_positive
+        elif best_lag_pos_corr_med > best_lag_neg_corr_med and best_lag_pos_corr_med > zero_corr_med:
+            best_lag = best_lag_pos
+            pval_increase = best_lag_pos_pval_increase
+            pval_positive = best_lag_pos_pval_positive
+        else:
+            best_lag = 0
+            pval_increase = zero_pval_increase
+            pval_positive = zero_pval_positive
+        
+        db.execute(
+            'INSERT INTO lagtests VALUES (?,?,?,?,?,?,?)',
+            [cname, ename, best_lag, pval_positive, pval_increase, pval_neg_best, pval_nonpos_best]
+        )
+    except:
+        sys.stderr.write('No data available.\n')
+        pass
     
     db.commit()
             
@@ -253,10 +261,12 @@ def run_analysis_mappable(args):
         corrs = []
         for i in range(n_bootstraps):
             emb_samp = emb.sample_embedding(L, match_valid_vec=cause, replace=True, rng=rng)
-            ccm_result, y_actual, y_pred = emb_samp.simplex_predict_summary(emb, cause, theiler_window=dt)
-
-            corrs.append(ccm_result['correlation'])
+            if emb_samp is not None:
+                ccm_result, y_actual, y_pred = emb_samp.simplex_predict_summary(emb, cause, theiler_window=dt)
+                corrs.append(ccm_result['correlation'])
         
+        if len(corrs) < 2:
+            corrs = None
         results_dict[L] = corrs
     
     return lag, results_dict
