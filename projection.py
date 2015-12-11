@@ -59,7 +59,6 @@ class ProjectionEmbedding:
             assert delay_vector_unprojected.shape[0] == self.dmax
 
             if numpy.any(numpy.logical_or(numpy.isnan(delay_vector_unprojected), numpy.isinf(delay_vector_unprojected))):
-                sys.stderr.write('Warning: found nan or inf at index {0}; leaving out'.format(i))
                 continue
 
             delay_vector = numpy.dot(self.projection_mat, delay_vector_unprojected)
@@ -76,7 +75,7 @@ class ProjectionEmbedding:
             self.embedding_mat = numpy.array(embedding_list)
             assert self.embedding_mat.shape[1] == self.d
 
-    def sample_embedding(self, n, replace=True, rng=numpy.random):
+    def sample_embedding(self, n, match_valid_vec=None, replace=True, rng=numpy.random):
         '''
         >>> a = ProjectionEmbedding([1, 2, 3, 4], 2, 2)
         >>> b = a.sample_embedding(2, replace=False)
@@ -100,8 +99,17 @@ class ProjectionEmbedding:
         assert n > 0
         if replace == False:
             assert n < self.embedding_mat.shape[0]
-
-        inds = rng.choice(self.embedding_mat.shape[0], size=n, replace=replace)
+        
+        if match_valid_vec is not None:
+            valid_ind_mask = numpy.logical_not(numpy.isnan(match_valid_vec))[self.t]
+            valid_inds = numpy.arange(self.embedding_mat.shape[0])[valid_ind_mask]
+            
+            if valid_inds.shape[0] == 0:
+                return None
+            
+            inds = rng.choice(valid_inds, size=n, replace=replace)
+        else:
+            inds = rng.choice(self.embedding_mat.shape[0], size=n, replace=replace)
 
         return ProjectionEmbedding(self.x, self.dmax, self.d, embedding_mat=self.embedding_mat[inds,:], t=self.t[inds], projection_mat = self.projection_mat)
 
@@ -362,26 +370,14 @@ class ProjectionEmbedding:
             return dn, tn
 
     def ccm(self, query_embedding, y_full, neighbor_count=None, theiler_window=1, use_kdtree=True):
-
+        return self.simplex_predict_summary(query_embedding, y_full, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree)
+    
+    def simplex_predict_summary(self, query_embedding, y_full, neighbor_count=None, theiler_window=1, use_kdtree=True):
         y_actual, y_pred = self.simplex_predict_using_embedding(
             query_embedding, y_full, neighbor_count=neighbor_count, theiler_window=theiler_window, use_kdtree=use_kdtree
-        )
-        invalid = numpy.isnan(y_pred)
-        valid = numpy.logical_not(invalid)
-        valid_count = valid.sum()
-
-        sd_actual = numpy.std(y_actual[valid])
-        sd_pred = numpy.std(y_pred[valid])
-
-        if valid_count == 0:
-            corr = float('nan')
-        elif sd_actual == 0 and sd_pred == 0:
-            corr = 1.0
-        elif sd_actual == 0 or sd_pred == 0:
-            corr = 0.0
-        else:
-            corr = numpy.corrcoef(y_actual[valid], y_pred[valid])[0,1]
-
+        )   
+        corr, valid_count, sd_actual, sd_pred = correlation_valid(y_actual, y_pred)
+        
         return OrderedDict([
             ('correlation', corr),
             ('valid_count', valid_count),
@@ -546,3 +542,27 @@ def tajima_cross_embedding(cause, effect, theiler_window, neighbor_count = None,
     sys.stderr.write('min d >= threshold: d = {}, corr = {}\n'.format(corr_d, corr))
 
     return ProjectionEmbedding(effect, max_corr_dmax_all_dmax, corr_d, projection_mat=pm)
+
+
+
+def correlation_valid(x, y):
+    invalid = numpy.logical_or(numpy.isnan(x), numpy.isnan(y))
+    valid = numpy.logical_not(invalid)
+    valid_count = valid.sum()
+
+    if valid_count == 0:
+        corr = float('nan')
+        sd_x = float('nan')
+        sd_y = float('nan')
+    else:
+        sd_x = numpy.std(x[valid])
+        sd_y = numpy.std(y[valid])
+        
+        if sd_x == 0 and sd_y == 0:
+            corr = 1.0
+        elif sd_x == 0 or sd_y == 0:
+            corr = 0.0
+        else:
+            corr = numpy.corrcoef(x[valid], y[valid])[0,1]
+    
+    return corr, valid_count, sd_x, sd_y

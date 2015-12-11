@@ -747,6 +747,37 @@ def univariate_predict_mappable(args):
     result, x_off_actual, x_off_pred = emb.simplex_predict_summary(emb, x[1:], theiler_window=dt)
     return result['correlation'], emb.delay_vector_count
 
+def identify_embedding_projection_cross(cause, effect, Emax, dt, replicates=1, cores=1, corr_threshold=1.00):
+    proj_mat = numpy.ones((Emax, Emax), dtype=float)
+    args = []
+    for E in range(1, Emax + 1):
+        for rep in range(replicates):
+            args.append((cause, effect, proj_mat, dt, E, rep))
+    
+    result = pool_map(cross_embedding_predict_random_projection, args, cores)
+    
+    return result
+
+def cross_embedding_predict_random_projection(args):
+    cause, effect, proj_mat, dt, E, rep = args
+    print cause, effect, proj_mat, dt, E, rep
+    
+    return None
+
+def pool_map(func, args, cores, chunksize=1):
+    pool = multiprocessing.Pool(cores)
+    
+    async_result = pool.map_async(func, args, chunksize=chunksize)
+    try:
+        # Need a timeout to avoid KeyboardInterrupt Python bug; a million years should be safe
+        results = async_result.get(60*60*24*365*1000*1000)
+    except KeyboardInterrupt:
+        pool.terminate()
+        pool.join()
+        sys.stdout.write('\n')
+    
+    return results
+
 if __name__ == '__main__':
     os.chdir(os.path.dirname(__file__))
 

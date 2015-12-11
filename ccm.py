@@ -7,6 +7,7 @@ import sys
 import sqlite3
 import json
 import pyembedding
+import projection
 import statutils
 import multiprocessing
 import numpy
@@ -50,22 +51,32 @@ def main():
     # Set up output data
     db = sqlite3.connect(args.output_filename)
     
-    # Identify E, tau for each variable using univariate one-step-ahead prediction
-    if E is None:
-        Etau_dict = identify_Etau(db, data, Emin, Emax, taumin, taumax, dt, cores)
+    if args.identification_target == 'self':
+        assert args.method == 'uniform'
+        
+        if E is None:
+            Etau_dict = identify_Etau(db, data, Emin, Emax, taumin, taumax, dt, cores)
+        else:
+            Etau_dict = OrderedDict([(var_name, (E, tau)) for var_name in data.keys()])
     else:
-        Etau_dict = OrderedDict([(var_name, (E, tau)) for var_name in data.keys()])
+        assert args.identification_target == 'cross'
+        assert args.method == 'projection'
     
     for cname, cause in data.iteritems():
         for ename, effect in data.iteritems():
             if cname != ename:
-                E, tau = Etau_dict[ename]
-                if E is None:
-                    sys.stderr.write('Skipping {} as effect\n'.format(ename))
-                    continue
+                if args.method == 'uniform':
+                    E, tau = Etau_dict[ename]
+                    emb = pyembedding.Embedding(effect, range(0, E*tau, tau))
+                    
+                    if E is None:
+                        sys.stderr.write('Skipping {} as effect\n'.format(ename))
+                        continue
+                elif args.method == 'projection':
+                    emb = identify_projection_cross(db, cause, effect, dt)
                 
                 sys.stderr.write('Running {}, {}\n'.format(cname, ename))
-                run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip, n_bootstraps, cores)
+                run_analysis(db, cname, cause, ename, effect, emb, dt, max_lag, lag_skip, n_bootstraps, cores)
 
 def identify_Etau(db, data, Emin, Emax, taumin, taumax, dt, cores):
     assert Emin > 0
@@ -93,10 +104,12 @@ def identify_Etau(db, data, Emin, Emax, taumin, taumax, dt, cores):
     
 def identify_Etau_single(x, Etau_list, dt, cores):
     E, tau, corrs = pyembedding.identify_embedding_max_univariate_prediction(x, Etau_list, dt, cores)
-    
     return E, tau
 
-def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip, n_bootstraps, cores):
+def identify_projection_cross(db, cause, effect, dt):
+    return projection.tajima_cross_embedding(cause, effect, dt, corr_threshold = 0.95)
+
+def run_analysis(db, cname, cause, ename, effect, emb, dt, max_lag, lag_skip, n_bootstraps, cores):
 #     
 #     L = args.library_size
 #     assert L is None
@@ -104,18 +117,10 @@ def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip,
     pool = multiprocessing.Pool(cores)
     
     lag_range = range(-max_lag, -lag_skip + 1, lag_skip) + range(0, max_lag + 1, lag_skip)
-    args = [(cause, effect, E, tau, dt, lag, n_bootstraps) for lag in lag_range]
+    args = [(cause, effect, emb, dt, lag, n_bootstraps) for lag in lag_range]
     
-    async_result = pool.map_async(run_analysis_mappable, args, chunksize=1)
-    try:
-        # Need a timeout to avoid KeyboardInterrupt Python bug; a million years should be safe
-        results = async_result.get(60*60*24*365*1000*1000)
-    except KeyboardInterrupt:
-        pool.terminate()
-        pool.join()
-        sys.stdout.write('\n')
-    
-#     results = map(run_analysis_mappable, args)
+    results = pyembedding.pool_map(run_analysis_mappable, args, cores)
+    # results = map(run_analysis_mappable, args)
     
     db.execute('CREATE TABLE IF NOT EXISTS correlations (cause, effect, lag, L, correlation)')
     db.execute('CREATE TABLE IF NOT EXISTS tests (cause, effect, lag, Lmin, Lmax, pval_positive, pval_increase)')
@@ -185,61 +190,58 @@ def run_analysis(db, cname, cause, ename, effect, E, tau, dt, max_lag, lag_skip,
                     'INSERT INTO correlations VALUES (?,?,?,?,?)',
                     [cname, ename, lag, L, corr]
                 )
-    try:
-        # Get the best negative-or-zero lag
-        if best_lag_neg_corr_med > zero_corr_med:
-            best_lag_nonpos = best_lag_neg
-            best_lag_nonpos_corrs = best_lag_neg_corrs
-            best_lag_nonpos_corr_med = best_lag_neg_corr_med
-            best_lag_nonpos_pval_increase = best_lag_neg_pval_increase
-            best_lag_nonpos_pval_positive = best_lag_neg_pval_positive
-        else:
-            best_lag_nonpos = 0
-            best_lag_nonpos_corrs = zero_corrs
-            best_lag_nonpos_corr_med = zero_corr_med
-            best_lag_nonpos_pval_increase = zero_pval_increase
-            best_lag_nonpos_pval_positive = zero_pval_positive
     
-        # Get the best positive-or-zero lag
-        if best_lag_pos_corr_med > zero_corr_med:
-            best_lag_nonneg = best_lag_pos
-            best_lag_nonneg_corrs = best_lag_pos_corrs
-            best_lag_nonneg_corr_med = best_lag_pos_corr_med
-            best_lag_nonneg_pval_increase = best_lag_pos_pval_increase
-            best_lag_nonneg_pval_positive = best_lag_pos_pval_positive
-        else:
-            best_lag_nonneg = 0
-            best_lag_nonneg_corrs = zero_corrs
-            best_lag_nonneg_corr_med = zero_corr_med
-            best_lag_nonneg_pval_increase = zero_pval_increase
-            best_lag_nonneg_pval_positive = zero_pval_positive
+    # Get the best negative-or-zero lag
+    if best_lag_neg_corr_med > zero_corr_med:
+        best_lag_nonpos = best_lag_neg
+        best_lag_nonpos_corrs = best_lag_neg_corrs
+        best_lag_nonpos_corr_med = best_lag_neg_corr_med
+        best_lag_nonpos_pval_increase = best_lag_neg_pval_increase
+        best_lag_nonpos_pval_positive = best_lag_neg_pval_positive
+    else:
+        best_lag_nonpos = 0
+        best_lag_nonpos_corrs = zero_corrs
+        best_lag_nonpos_corr_med = zero_corr_med
+        best_lag_nonpos_pval_increase = zero_pval_increase
+        best_lag_nonpos_pval_positive = zero_pval_positive
+
+    # Get the best positive-or-zero lag
+    if best_lag_pos_corr_med > zero_corr_med:
+        best_lag_nonneg = best_lag_pos
+        best_lag_nonneg_corrs = best_lag_pos_corrs
+        best_lag_nonneg_corr_med = best_lag_pos_corr_med
+        best_lag_nonneg_pval_increase = best_lag_pos_pval_increase
+        best_lag_nonneg_pval_positive = best_lag_pos_pval_positive
+    else:
+        best_lag_nonneg = 0
+        best_lag_nonneg_corrs = zero_corrs
+        best_lag_nonneg_corr_med = zero_corr_med
+        best_lag_nonneg_pval_increase = zero_pval_increase
+        best_lag_nonneg_pval_positive = zero_pval_positive
+
+    # Test if negative is better than nonnegative
+    pval_neg_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_nonneg_corrs, best_lag_neg_corrs))
+
+    # Test if nonpositive is better than positive
+    pval_nonpos_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_pos_corrs, best_lag_nonpos_corrs))
+
+    if best_lag_neg_corr_med > best_lag_pos_corr_med and best_lag_neg_corr_med > zero_corr_med:
+        best_lag = best_lag_neg
+        pval_increase = best_lag_neg_pval_increase
+        pval_positive = best_lag_neg_pval_positive
+    elif best_lag_pos_corr_med > best_lag_neg_corr_med and best_lag_pos_corr_med > zero_corr_med:
+        best_lag = best_lag_pos
+        pval_increase = best_lag_pos_pval_increase
+        pval_positive = best_lag_pos_pval_positive
+    else:
+        best_lag = 0
+        pval_increase = zero_pval_increase
+        pval_positive = zero_pval_positive
     
-        # Test if negative is better than nonnegative
-        pval_neg_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_nonneg_corrs, best_lag_neg_corrs))
-    
-        # Test if nonpositive is better than positive
-        pval_nonpos_best = 1.0 - numpy.mean(statutils.inverse_quantile(best_lag_pos_corrs, best_lag_nonpos_corrs))
-    
-        if best_lag_neg_corr_med > best_lag_pos_corr_med and best_lag_neg_corr_med > zero_corr_med:
-            best_lag = best_lag_neg
-            pval_increase = best_lag_neg_pval_increase
-            pval_positive = best_lag_neg_pval_positive
-        elif best_lag_pos_corr_med > best_lag_neg_corr_med and best_lag_pos_corr_med > zero_corr_med:
-            best_lag = best_lag_pos
-            pval_increase = best_lag_pos_pval_increase
-            pval_positive = best_lag_pos_pval_positive
-        else:
-            best_lag = 0
-            pval_increase = zero_pval_increase
-            pval_positive = zero_pval_positive
-        
-        db.execute(
-            'INSERT INTO lagtests VALUES (?,?,?,?,?,?,?)',
-            [cname, ename, best_lag, pval_positive, pval_increase, pval_neg_best, pval_nonpos_best]
-        )
-    except:
-        sys.stderr.write('No data available.\n')
-        pass
+    db.execute(
+        'INSERT INTO lagtests VALUES (?,?,?,?,?,?,?)',
+        [cname, ename, best_lag, pval_positive, pval_increase, pval_neg_best, pval_nonpos_best]
+    )
     
     db.commit()
             
@@ -248,10 +250,24 @@ def run_analysis_mappable(args):
     rng_seed = random.SystemRandom().randint(1, 2**31 - 1)
     rng = numpy.random.RandomState(rng_seed)
     
-    cause, effect, E, tau, dt, lag, n_bootstraps = args
-    delays = range(lag, lag + E*tau, tau)
+    cause, effect, emb, dt, lag, n_bootstraps = args
     
-    emb = pyembedding.Embedding(effect, delays)
+    if lag == 0:
+        cause_lagged = cause
+#         print lag, cause.shape[0], numpy.isnan(cause_lagged).sum()
+    elif lag > 0:
+        cause_lagged = numpy.zeros_like(cause)
+        cause_lagged[:-lag] = cause[lag:]
+        cause_lagged[-lag:] = float('nan')
+#         print lag, cause_lagged.shape[0], numpy.isnan(cause_lagged).sum()
+    else: # lag < 0
+        cause_lagged = numpy.zeros_like(cause)
+        cause_lagged[-lag:] = cause[:lag]
+        cause_lagged[:-lag] = float('nan')
+#         print lag, cause_lagged.shape[0], numpy.isnan(cause_lagged).sum()
+    
+    # delays = range(lag, lag + E*tau, tau)
+    # emb = pyembedding.Embedding(effect, delays)
     
     Lmin = emb.embedding_dimension + 2
     Lmax = emb.delay_vector_count
@@ -260,9 +276,9 @@ def run_analysis_mappable(args):
     for L in (Lmin, Lmax):
         corrs = []
         for i in range(n_bootstraps):
-            emb_samp = emb.sample_embedding(L, match_valid_vec=cause, replace=True, rng=rng)
+            emb_samp = emb.sample_embedding(L, match_valid_vec=cause_lagged, replace=True, rng=rng)
             if emb_samp is not None:
-                ccm_result, y_actual, y_pred = emb_samp.simplex_predict_summary(emb, cause, theiler_window=dt)
+                ccm_result, y_actual, y_pred = emb_samp.simplex_predict_summary(emb, cause_lagged, theiler_window=dt)
                 corrs.append(ccm_result['correlation'])
         
         if len(corrs) < 2:
@@ -296,6 +312,23 @@ def parse_arguments():
         '--library-size', '-l', '-L', metavar='<max-library-size>',
         action='append',
         help='Library size to test. If none are provided, minimum and maximum possible are used.'
+    )
+    
+    parser.add_argument(
+        '--method', metavar='<method>', type=str,
+        default='uniform',
+        choices=['uniform', 'projection']
+    )
+    
+    parser.add_argument(
+        '--identification-target', metavar='<identification-target>', type=str,
+        default='self',
+        choices=['self', 'cross']
+    )
+    
+    parser.add_argument(
+        '--identification-offset', metavar='<identification-target>', type=int,
+        default=None
     )
     
     parser.add_argument(
