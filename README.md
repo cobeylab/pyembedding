@@ -3,6 +3,8 @@
 Ed Baskerville
 last update: 26 February 2015
 
+NB: Usage instructions out of date but repo is published for the sake of reproducibility for paper.
+
 ## Overview
 
 This package contains a Python implementation of nonlinear time-series embedding methods.
